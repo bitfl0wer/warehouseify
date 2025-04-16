@@ -15,7 +15,8 @@ clap = { version = "4.5.36", features = [
     "std",
     "usage",
 ], default-features = false }
+env_logger = { version = "0.11.8", default-features = false }
+log = "0.4.27"
 minisign = "0.7.9"
-regex = { version = "1.11.1", default-features = false, features = ["std"] }
 toml = "0.8.20"
 ureq = { version = "3.0.11", features = ["platform-verifier"] }
