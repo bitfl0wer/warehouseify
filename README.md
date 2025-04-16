@@ -13,3 +13,7 @@ Create your own `cargo-binstall` repository with GitHub and GitHub Actions.
 - specify whether crates should be auditable in config file
 - specify dependency versions in config file if wanted (latest is default)
 - warehousify edits target crates cargo.toml with binstall info, creates binaries, outputs them on binary and uploads them when using the gh action
+
+## Roadmap
+
+- [ ] Feature-gate internet connectivity: Allow for completely local building of crates, providing all listed crates are declared as locally available
