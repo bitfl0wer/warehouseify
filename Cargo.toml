@@ -2,5 +2,20 @@
 name = "warehouseify"
 version = "0.1.0"
 edition = "2024"
+authors = ["bitfl0wer <flori@bitfl0wer.de>"]
+license = "MPL-2.0"
+description = "Create your own `cargo-binstall` repository."
 
 [dependencies]
+cargo_toml = "0.22.1"
+clap = { version = "4.5.36", features = [
+    "derive",
+    "error-context",
+    "help",
+    "std",
+    "usage",
+], default-features = false }
+minisign = "0.7.9"
+regex = { version = "1.11.1", default-features = false, features = ["std"] }
+toml = "0.8.20"
+ureq = { version = "3.0.11", features = ["platform-verifier"] }
