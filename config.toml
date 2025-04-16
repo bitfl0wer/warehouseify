@@ -1,0 +1,17 @@
+[crates]
+crate = "0.22.1"
+more_arguments = { version = "1.29.32", features = [
+    "crazy",
+    "features",
+], default_features = false, git = "https://gitrepo.com/org/repo", branch = "steak" }
+
+[options]
+architectures = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+cargo-auditable = { enabled = true, version = "0.2.0" }
+other = { enabled = true, version = "^0.1.1" }
+more = { enabled = true, version = "=1.0.100" }
+some = { enabled = false, version = "1.0" }
+crates = { enabled = false, version = "1" }
+guh = { enabled = false, version = "*" }
