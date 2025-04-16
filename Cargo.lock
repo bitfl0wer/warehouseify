@@ -814,6 +814,7 @@ dependencies = [
  "env_logger",
  "log",
  "minisign",
+ "serde",
  "toml",
  "ureq",
 ]
