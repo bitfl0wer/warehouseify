@@ -17,3 +17,5 @@ target/
 #.idea/
 
 **/.DS_Store
+# My local to-do list for this crate :3
+todo-list.md
