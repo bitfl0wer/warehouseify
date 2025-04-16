@@ -1,10 +1,17 @@
 use std::path::PathBuf;
 
 #[derive(Debug, clap::Parser)]
-#[command(version, about, long_about = None)]
+#[command(version, long_about = None)]
+#[command(about = "Manage your own cargo-binstall repository.")]
 pub struct Args {
-    #[arg(short, long)]
-    config: PathBuf,
-    #[arg(short, long)]
+    #[arg(short, long, value_name = "FILE")]
+    /// Path to a warehouseify config file. If not specified, will use default values.
+    config: Option<PathBuf>,
+    /// Minisign secret key, used to sign the resulting binstall-ready crate.
     signing_key: Option<minisign::SecretKeyBox>,
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    /// Turn on verbose logging. The default log level is "WARN".
+    /// Each instance of "v" in "-v" will increase the logging level by one. Available, additional
+    /// logging levels are INFO (-v), DEBUG (-vv) and TRACE (-vvv)
+    verbose: u8,
 }
