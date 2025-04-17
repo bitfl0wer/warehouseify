@@ -27,3 +27,7 @@ Create your own `cargo-binstall` repository with GitHub and GitHub Actions.
 
 - [ ] Feature-gate internet connectivity: Allow for completely local building of crates, providing all listed crates are declared as locally available
 - [ ] The `[dependencies]` section of the config.toml file should allow specifying a binstall repository
+
+##### Logo
+
+"warehousify" Icon Source: https://www.iconfinder.com/icons/9165464/warehouse_storage_icon, published under [CC BY 4.0 license](https://creativecommons.org/licenses/by/4.0/). Created by ["khushmeen icons"](https://www.iconfinder.com/khushmeen-icons)
