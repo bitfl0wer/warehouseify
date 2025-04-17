@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 authors = ["bitfl0wer <flori@bitfl0wer.de>"]
 license = "MPL-2.0"
-description = "Create your own `cargo-binstall` repository."
+description = "Create and manage your own `cargo-binstall` repository."
 
 [dependencies]
 cargo_toml = "0.22.1"
@@ -20,4 +20,3 @@ log = "0.4.27"
 minisign = "0.7.9"
 serde = { version = "1.0.219", features = ["derive"] }
 toml = "0.8.20"
-ureq = { version = "3.0.11", features = ["platform-verifier"] }
