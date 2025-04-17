@@ -17,3 +17,4 @@ Create your own `cargo-binstall` repository with GitHub and GitHub Actions.
 ## Roadmap
 
 - [ ] Feature-gate internet connectivity: Allow for completely local building of crates, providing all listed crates are declared as locally available
+- [ ] The `[dependencies]` section of the config.toml file should allow specifying a binstall repository
