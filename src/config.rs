@@ -1,14 +1,16 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::os::unix::prelude::MetadataExt;
 use std::path::PathBuf;
 
+use cargo_toml::DepsSet;
 use serde::Deserialize;
 
 use crate::StdError;
 
-#[derive(Deserialize)]
-struct ConfigFile {
+#[derive(Deserialize, Debug)]
+pub(crate) struct ConfigFile {
     crates: CratesConfig,
     options: OptionsConfig,
     dependencies: DependenciesConfig,
@@ -33,11 +35,25 @@ impl ConfigFile {
     }
 }
 
-#[derive(Deserialize)]
-struct CratesConfig;
+#[derive(Deserialize, Debug)]
+struct CratesConfig {
+    #[serde(flatten)]
+    pub(crate) crates: DepsSet,
+}
 
-#[derive(Deserialize)]
-struct OptionsConfig;
+#[derive(Deserialize, Debug)]
+struct OptionsConfig {
+    pub(crate) architectures: Vec<String>,
+}
 
-#[derive(Deserialize)]
-struct DependenciesConfig;
+#[derive(Deserialize, Debug)]
+struct DependenciesConfig {
+    #[serde(flatten)]
+    pub(crate) properties: HashMap<String, DependencyProperties>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DependencyProperties {
+    pub(crate) enabled: bool,
+    pub(crate) version: String,
+}

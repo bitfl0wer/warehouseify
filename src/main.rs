@@ -2,6 +2,7 @@ use std::sync::OnceLock;
 
 use clap::Parser;
 use cli::Args;
+use config::ConfigFile;
 use log::*;
 
 mod cli;
@@ -17,5 +18,6 @@ fn main() -> Result<(), StdError<'static>> {
         .set(Args::parse())
         .expect("illegal state: CLI_ARGUMENTS initialized before they have been parsed");
     println!("Hello, world!");
+    println!("{:#?}", ConfigFile::try_parse("config.toml".into())?);
     Ok(())
 }
