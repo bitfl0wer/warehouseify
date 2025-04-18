@@ -6,12 +6,12 @@ use std::path::PathBuf;
 pub struct Args {
     #[arg(short, long, value_name = "FILE")]
     /// Path to a warehouseify config file. If not specified, will use default values.
-    config: Option<PathBuf>,
+    pub(crate) config: Option<PathBuf>,
     /// Minisign secret key, used to sign the resulting binstall-ready crate.
-    signing_key: Option<minisign::SecretKeyBox>,
+    pub(crate) signing_key: Option<minisign::SecretKeyBox>,
     #[arg(short, long, action = clap::ArgAction::Count)]
     /// Turn on verbose logging. The default log level is "WARN".
     /// Each instance of "v" in "-v" will increase the logging level by one. Available, additional
     /// logging levels are INFO (-v), DEBUG (-vv) and TRACE (-vvv)
-    verbose: u8,
+    pub(crate) verbose: u8,
 }
