@@ -55,71 +55,7 @@ fn execute_cargo_install_list() -> Result<(ExitStatus, Output), StdError<'static
 pub(crate) fn list_missing_dependencies(
     dependency_requirements: &DependenciesConfig,
 ) -> Result<HashSet<Crate>, StdError<'static>> {
-    let cargo_install_list_output = execute_cargo_install_list()?;
-    let stdout = String::from_utf8(cargo_install_list_output.1.stdout)?;
-    if stdout.is_empty() {
-        // Fast path to hell, baby
-        return Err(String::from(
-            "received empty stdout when calling cargo install --list; assuming command failed",
-        )
-        .into());
-    }
-
-    let mut installed_crates = HashMap::new();
-    for line in stdout.lines() {
-        // cargo install --list not only outputs the installed crates and their versions, but what
-        // commands these crates come with too. This check filters the latter out, since we do not
-        // need it.
-        if line.starts_with(' ') {
-            continue;
-        }
-
-        let parts = line
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect::<Vec<String>>();
-
-        let crate_name = match parts.first().cloned() {
-            Some(name) => name,
-            None => {
-                return Err(String::from(
-                    "no crate name found, is the output malformed? file a bug report",
-                )
-                .into());
-            }
-        };
-
-        let mut crate_version = match parts.get(1).cloned() {
-            Some(mut version) => version.split_off(1),
-            None => {
-                return Err(String::from(
-                    "no crate version found, is the output malformed? file a bug report",
-                )
-                .into());
-            }
-        };
-
-        if parts.len() == 2 {
-            // If parts.len() == 2, the output of cargo install --list typically looks like this:
-            // rusty-hook v0.11.2:
-            // We want to remove the colon at the end.\
-            // If parts.len() == 3, then the output looks a little different, and the colon is not
-            // present.
-            crate_version.pop();
-        }
-        log::trace!(
-            r#"Inserted crate "{}" version "{}" into installed_crates map"#,
-            crate_name,
-            crate_version
-        );
-        installed_crates.insert(
-            crate_name.clone(),
-            Crate {
-                name: crate_name,
-                version: crate_version,
-            },
-        );
-    }
+    let installed_crates = get_installed_crates_on_host()?;
     log::trace!("List of crates installed on host: {:?}", installed_crates);
 
     let mut crates_not_found = HashSet::new();
@@ -140,7 +76,7 @@ pub(crate) fn list_missing_dependencies(
         }
         let crateified_dependency = Crate {
             name: required_dependency_name.clone(),
-            version: required_dependency_info.version.clone(),
+            version: format_crate_version(&required_dependency_info.version),
         };
         if let Some(is_installed) = installed_crates.get(required_dependency_name.as_str()) {
             log::trace!(
@@ -195,4 +131,83 @@ pub(crate) fn list_missing_dependencies(
         crates_not_found
     );
     Ok(crates_not_found)
+}
+
+/// Takes a version string outputted by the `cargo install --list` command and tries to normalize it
+/// by removing stray leading/tailing characters. This method expects output of the above mentioned
+/// command and does not work on any random version-like string.
+fn format_crate_version(cargo_install_version: &str) -> String {
+    let mut version_string = String::from(cargo_install_version);
+    version_string = version_string.trim().to_string();
+    if version_string.starts_with('v') {
+        version_string = version_string.split_off(1);
+    }
+    if version_string.ends_with(':') {
+        version_string.pop();
+    }
+    version_string
+}
+
+/// Tries to retrieve a structured set of crates installed via `cargo install` or `cargo-binstall`
+/// on the host system. Notably, this function invokes the `cargo install --list` command on the
+/// host and as such, requires `cargo` to be available on the users' `PATH`.
+fn get_installed_crates_on_host() -> Result<HashMap<String, Crate>, StdError<'static>> {
+    let cargo_install_list_output = execute_cargo_install_list()?;
+    let stdout = String::from_utf8(cargo_install_list_output.1.stdout)?;
+    if stdout.is_empty() {
+        // Fast path to hell, baby
+        return Err(String::from(
+            "received empty stdout when calling cargo install --list; assuming command failed",
+        )
+        .into());
+    }
+
+    let mut installed_crates = HashMap::new();
+    for line in stdout.lines() {
+        // cargo install --list not only outputs the installed crates and their versions, but what
+        // commands these crates come with too. This check filters the latter out, since we do not
+        // need it.
+        if line.starts_with(' ') {
+            continue;
+        }
+
+        let parts = line
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+
+        let crate_name = match parts.first().cloned() {
+            Some(name) => name,
+            None => {
+                return Err(String::from(
+                    "no crate name found, is the output malformed? file a bug report",
+                )
+                .into());
+            }
+        };
+
+        let crate_version = match parts.get(1).cloned() {
+            Some(version) => format_crate_version(&version),
+            None => {
+                return Err(String::from(
+                    "no crate version found, is the output malformed? file a bug report",
+                )
+                .into());
+            }
+        };
+
+        log::trace!(
+            r#"Inserted crate "{}" version "{}" into installed_crates map"#,
+            crate_name,
+            crate_version
+        );
+        installed_crates.insert(
+            crate_name.clone(),
+            Crate {
+                name: crate_name,
+                version: crate_version,
+            },
+        );
+    }
+    Ok(installed_crates)
 }
