@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitCode, ExitStatus, Output, Stdio};
 
 use semver::{Version, VersionReq};
 
@@ -12,16 +12,9 @@ pub(crate) struct Crate {
     pub(crate) version: String,
 }
 
-/// Checks if the dependencies listed in the [DependenciesConfig] are available on the system. Returns
-/// a list of missing dependencies as a [Vec] of [DependencyProperties], if successful. If an error is
-/// encountered, it is returned as an [StdError].
-///
-/// ## Requirements
-///
-/// Requires `cargo` to be installed on the host system and on the user's `PATH`.
-pub(crate) fn list_missing_dependencies(
-    dependency_requirements: &DependenciesConfig,
-) -> Result<HashSet<Crate>, StdError<'static>> {
+/// Executes `cargo install --list` on the host, collects its' output and checks if the command
+/// executed successfully.
+fn execute_cargo_install_list() -> Result<(ExitStatus, Output), StdError<'static>> {
     let installed_crates_output = Command::new("cargo")
         .arg("install")
         .arg("--list")
@@ -43,9 +36,27 @@ pub(crate) fn list_missing_dependencies(
         } else {
             log::error!("process provided no further output in STDERR");
         }
+        Err(String::from(
+            "Executing 'cargo install --list' failed on the host. Is cargo available on PATH?",
+        )
+        .into())
+    } else {
+        Ok((installed_crates_output.status, installed_crates_output))
     }
+}
 
-    let stdout = String::from_utf8(installed_crates_output.stdout)?;
+/// Checks if the dependencies listed in the [DependenciesConfig] are available on the system. Returns
+/// a list of missing dependencies as a [Vec] of [DependencyProperties], if successful. If an error is
+/// encountered, it is returned as an [StdError].
+///
+/// ## Requirements
+///
+/// Requires `cargo` to be installed on the host system and on the user's `PATH`.
+pub(crate) fn list_missing_dependencies(
+    dependency_requirements: &DependenciesConfig,
+) -> Result<HashSet<Crate>, StdError<'static>> {
+    let cargo_install_list_output = execute_cargo_install_list()?;
+    let stdout = String::from_utf8(cargo_install_list_output.1.stdout)?;
     if stdout.is_empty() {
         // Fast path to hell, baby
         return Err(String::from(
@@ -167,11 +178,16 @@ pub(crate) fn list_missing_dependencies(
                 continue;
             } else {
                 log::debug!(
-                    "Host-installed crate dependency {} matches the requirements laid out in the config file.",
+                    r#"Host-installed crate dependency "{}" matches the requirements laid out in the config file."#,
                     is_installed.name
                 );
+                continue;
             }
         }
+        log::debug!(
+            r#"Could not find crate "{}" on host system."#,
+            crateified_dependency.name
+        );
         crates_not_found.insert(crateified_dependency);
     }
     log::debug!(
