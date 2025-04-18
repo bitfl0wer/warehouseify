@@ -8,7 +8,6 @@ Create and maintain your own [`cargo-binstall`](https://github.com/cargo-bins/ca
 
 ## Crate overview
 
-
 Create your own `cargo-binstall` repository with GitHub and GitHub Actions.
 
 ## Goals
