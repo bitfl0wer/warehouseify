@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
-use std::process::{Command, ExitCode, ExitStatus, Output, Stdio};
+use std::process::{Command, ExitStatus, Output, Stdio};
 
 use semver::{Version, VersionReq};
 
 use crate::StdError;
 use crate::config::DependenciesConfig;
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub(crate) struct Crate {
     pub(crate) name: String,
     pub(crate) version: String,

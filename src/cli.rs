@@ -18,4 +18,10 @@ pub struct Args {
     #[arg(short, long, default_value_t = false)]
     /// Assume "yes" to all questions asked.
     pub(crate) no_confirm: bool,
+    #[arg(long, default_value_t = false)]
+    /// When installing dependencies, pass the "--locked" argument to cargo.
+    pub(crate) locked: bool,
+    /// When installing dependencies, pass the "--force" argument to cargo.
+    #[arg(long, default_value_t = false)]
+    pub(crate) force: bool,
 }

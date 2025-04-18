@@ -1,11 +1,15 @@
+use std::collections::HashSet;
+use std::fmt::Display;
+use std::process::{Command, exit};
 use std::sync::OnceLock;
 
 #[cfg(not(debug_assertions))]
 use clap::Parser;
 use cli::Args;
 use config::ConfigFile;
-use dependencies::list_missing_dependencies;
+use dependencies::{Crate, list_missing_dependencies};
 use log::*;
+use semver::{Version, VersionReq};
 
 mod cli;
 mod config;
@@ -23,6 +27,8 @@ fn main() -> Result<(), StdError<'static>> {
             signing_key: None,
             verbose: 4,
             no_confirm: false,
+            locked: false,
+            force: true,
         })
         .expect("You messed up.");
     #[cfg(debug_assertions)]
@@ -36,6 +42,7 @@ fn main() -> Result<(), StdError<'static>> {
     CLI_ARGUMENTS
         .set(Args::parse())
         .expect("illegal state: CLI_ARGUMENTS initialized before they have been parsed");
+    let cli_arguments = CLI_ARGUMENTS.get().expect("cli arguments are missing");
     let log_level = match CLI_ARGUMENTS
         .get()
         .expect("cli args have not been parsed")
@@ -58,6 +65,75 @@ fn main() -> Result<(), StdError<'static>> {
     debug!("Hello, world!");
     let config = ConfigFile::try_parse("config.toml".into())?;
     trace!("Parsed config: {:#?}", &config);
-    list_missing_dependencies(&config.dependencies)?;
+    let missing_dependencies = list_missing_dependencies(&config.dependencies)?;
+    if !cli_arguments.no_confirm {
+        println!(
+            r#"The following dependencies have been determined to be missing on the host system: {}. Would you like to install them by using "cargo install"? [y/N]"#,
+            fmt_missing_dependencies(&missing_dependencies)
+        );
+        let mut buffer = String::new();
+        let stdin = std::io::stdin();
+        stdin.read_line(&mut buffer)?;
+        if buffer.trim().to_lowercase().starts_with('y') {
+            install_missing_dependencies(
+                missing_dependencies
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<Crate>>()
+                    .as_slice(),
+            )?;
+        } else {
+            eprintln!(
+                "Cannot proceed without installing missing dependencies. Either manually install them or disable them in your configuration file."
+            );
+            exit(1)
+        }
+    }
     Ok(())
+}
+
+#[allow(clippy::expect_used)]
+fn install_missing_dependencies(deps: &[Crate]) -> Result<(), StdError<'static>> {
+    let mut command = Command::new("cargo");
+    command.arg("install");
+    if CLI_ARGUMENTS.get().expect("cli arguments not set").locked {
+        command.arg("--locked");
+    }
+    if CLI_ARGUMENTS.get().expect("cli arguments not set").force {
+        command.arg("--force");
+    }
+    for dependency in deps {
+        let version = match VersionReq::parse(&dependency.version) {
+            Ok(v) => v,
+            Err(e) => {
+                log::error!(
+                    "Error when parsing version of dependency {} in configuration file: {}",
+                    dependency.name,
+                    e
+                );
+                return Err(String::from(
+                    "Malformed dependency or dependencies in configuration file",
+                )
+                .into());
+            }
+        };
+        command.arg(format!(r#"{}@{}"#, dependency.name, version));
+    }
+    let install_result = command.spawn()?.wait()?;
+    log::debug!("{:?}", install_result);
+    todo!()
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+fn fmt_missing_dependencies(deps: &HashSet<Crate>) -> String {
+    let mut missing = String::new();
+    for elem in deps.iter() {
+        trace!("name of missing crate: {}", elem.name);
+        missing += &(elem.name.clone() + ", ");
+    }
+    if missing.ends_with(", ") {
+        let _ = missing.split_off(missing.len().saturating_sub(2));
+    }
+    trace!("{}", missing);
+    missing
 }
