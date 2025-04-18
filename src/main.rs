@@ -1,5 +1,6 @@
 use std::sync::OnceLock;
 
+#[cfg(not(debug_assertions))]
 use clap::Parser;
 use cli::Args;
 use config::ConfigFile;
@@ -21,8 +22,10 @@ fn main() -> Result<(), StdError<'static>> {
             config: None,
             signing_key: None,
             verbose: 4,
+            no_confirm: false,
         })
         .expect("You messed up.");
+    #[cfg(debug_assertions)]
     for _ in 0..10 {
         println!(
             "!!! This crate has been compiled in DEBUG mode and will use trace level logging and DEBUG-only behaviors. To disable this, compile and install the crate in release mode."
