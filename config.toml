@@ -9,7 +9,8 @@ more_arguments = { version = "1.29.32", features = [
 architectures = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-cargo-auditable = { enabled = true, version = "0.2.0" }
+cargo-auditable = { enabled = true, version = "0.6.0" }
+nil = { enabled = true, version = "0.0.0" }
 other = { enabled = true, version = "^0.1.1" }
 more = { enabled = true, version = "=1.0.100" }
 some = { enabled = false, version = "1.0" }
