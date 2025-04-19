@@ -6,6 +6,10 @@ authors = ["bitfl0wer <flori@bitfl0wer.de>"]
 license = "MPL-2.0"
 description = "Create and manage your own `cargo-binstall` repository."
 
+[features]
+default = ["http-client"]
+http-client = ["dep:minreq"]
+
 [dependencies]
 cargo_toml = "0.22.1"
 clap = { version = "4.5.36", features = [
@@ -18,6 +22,7 @@ clap = { version = "4.5.36", features = [
 env_logger = { version = "0.11.8", default-features = false }
 log = "0.4.27"
 minisign = "0.7.9"
+minreq = { version = "2.13.4", features = ["https"], optional = true }
 semver = "1.0.26"
 serde = { version = "1.0.219", features = ["derive"] }
 toml = "0.8.20"
