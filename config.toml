@@ -11,8 +11,9 @@ architectures = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 cargo-auditable = { enabled = true, version = "0.6.0" }
 nil = { enabled = true, version = "0.0.0" }
-doesntexist = { enabled = true, version = "^0.1.1" }
-moredoesntexist = { enabled = true, version = "=1.0.100" }
+cargo-clicker = { enabled = true, version = "0.1.0" }
+doesntexist = { enabled = false, version = "^0.1.1" }
+moredoesntexist = { enabled = false, version = "=1.0.100" }
 somedoesntexist = { enabled = false, version = "1.0" }
 cratesdoesntexist = { enabled = false, version = "1" }
 guhdoesntexist = { enabled = false, version = "*" }
