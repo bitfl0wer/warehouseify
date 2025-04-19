@@ -135,6 +135,12 @@ fn install_missing_dependencies(deps: &[Crate]) -> Result<(), StdError<'static>>
 }
 
 #[allow(clippy::arithmetic_side_effects)]
+/// Basically, a [std::fmt::Display] for `HashSet<Crate>` ordered on wish.com. I can't impl
+/// Display for HashSet<Crate> unless I make it a newtype, and I don't want to deal with that.
+///
+/// Returns a comma delimited list of crates which are missing, like this:
+///
+/// `cargo_auditable, my_crate, amazing-other-crate`
 fn fmt_missing_dependencies(deps: &HashSet<Crate>) -> String {
     let mut missing = String::new();
     for elem in deps.iter() {
