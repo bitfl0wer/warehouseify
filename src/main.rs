@@ -92,6 +92,10 @@ fn main() -> Result<(), StdError<'static>> {
 }
 
 #[allow(clippy::expect_used)]
+/// Takes in a list of [Crate]s and tries to install them on the host with `cargo install`.
+/// Will panic the program if CLI args cannot be found. Will return an error, if the specified dependencies
+/// are malformed or if they cannot be found on crates.io. Will obviously also error, if `cargo install`
+/// returns an error or if the command invocation fails altogether.
 fn install_missing_dependencies(deps: &[Crate]) -> Result<(), StdError<'static>> {
     let mut command = Command::new("cargo");
     command.arg("install");
