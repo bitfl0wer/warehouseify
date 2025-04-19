@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::fmt::Display;
 use std::process::{Command, exit};
 use std::sync::OnceLock;
 
@@ -9,7 +8,7 @@ use cli::Args;
 use config::ConfigFile;
 use dependencies::{Crate, list_missing_dependencies};
 use log::*;
-use semver::{Version, VersionReq};
+use semver::VersionReq;
 
 mod cli;
 mod config;
@@ -121,7 +120,14 @@ fn install_missing_dependencies(deps: &[Crate]) -> Result<(), StdError<'static>>
     }
     let install_result = command.spawn()?.wait()?;
     log::debug!("{:?}", install_result);
-    todo!()
+    match install_result.success() {
+        true => Ok(()),
+        false => Err(format!(
+            "the installation of dependencies failed; cannot continue, cargo install exited with {}",
+            install_result
+        )
+        .into()),
+    }
 }
 
 #[allow(clippy::arithmetic_side_effects)]
