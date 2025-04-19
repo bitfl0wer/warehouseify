@@ -21,3 +21,8 @@ minisign = "0.7.9"
 semver = "1.0.26"
 serde = { version = "1.0.219", features = ["derive"] }
 toml = "0.8.20"
+
+[profile.release]
+lto = true
+opt-level = "s"
+codegen-units = 1
