@@ -13,12 +13,16 @@ use semver::VersionReq;
 mod cli;
 mod config;
 mod dependencies;
+mod output;
+mod process_crates;
 
 static CLI_ARGUMENTS: OnceLock<Args> = OnceLock::new();
 pub(crate) type StdError<'a> = Box<dyn std::error::Error + 'a>;
+/// [StdError] with a `'static` lifetime.
+pub(crate) type StdErrorS = StdError<'static>;
 
 #[allow(clippy::expect_used)]
-fn main() -> Result<(), StdError<'static>> {
+fn main() -> Result<(), StdErrorS> {
     #[cfg(debug_assertions)]
     CLI_ARGUMENTS
         .set(Args {
@@ -96,7 +100,7 @@ fn main() -> Result<(), StdError<'static>> {
 /// Will panic the program if CLI args cannot be found. Will return an error, if the specified dependencies
 /// are malformed or if they cannot be found on crates.io. Will obviously also error, if `cargo install`
 /// returns an error or if the command invocation fails altogether.
-fn install_missing_dependencies(deps: &[Crate]) -> Result<(), StdError<'static>> {
+fn install_missing_dependencies(deps: &[Crate]) -> Result<(), StdErrorS> {
     let mut command = Command::new("cargo");
     command.arg("install");
     if CLI_ARGUMENTS.get().expect("cli arguments not set").locked {
