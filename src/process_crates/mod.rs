@@ -11,11 +11,15 @@ pub(crate) mod build_sources;
 #[cfg(feature = "http-client")]
 pub(crate) mod download_sources;
 pub(crate) mod edit_sources;
+#[cfg(feature = "http-client")]
+pub(crate) mod unpack_sources;
 
 pub(crate) use build_sources::*;
 #[cfg(feature = "http-client")]
 pub(crate) use download_sources::*;
 pub(crate) use edit_sources::*;
+#[cfg(feature = "http-client")]
+pub(crate) use unpack_sources::*;
 
 /// Whether an http client is available in the current runtime environment.
 fn http_client_available() -> bool {
