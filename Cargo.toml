@@ -8,7 +8,7 @@ description = "Create and manage your own `cargo-binstall` repository."
 
 [features]
 default = ["http-client"]
-http-client = ["dep:minreq"]
+http-client = ["dep:minreq", "dep:flate2", "dep:tar"]
 
 [dependencies]
 cargo_toml = "0.22.1"
@@ -20,14 +20,17 @@ clap = { version = "4.5.36", features = [
     "usage",
 ], default-features = false }
 env_logger = { version = "0.11.8", default-features = false }
+flate2 = { version = "1.1.1", optional = true }
 log = "0.4.27"
 minisign = "0.7.9"
 minreq = { version = "2.13.4", features = ["https"], optional = true }
 semver = "1.0.26"
 serde = { version = "1.0.219", features = ["derive"] }
+tar = { version = "0.4.44", optional = true }
 toml = "0.8.20"
 
 [profile.release]
 lto = true
 opt-level = "s"
 codegen-units = 1
+strip = true
