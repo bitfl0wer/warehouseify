@@ -38,6 +38,13 @@ fn sort_crates_into_buckets(crates: DepsSet) -> Result<SortedCrates, StdErrorS> 
     let mut locally_unavailable_crates = Vec::new();
     for a_crate in crates.into_iter() {
         if a_crate.1.is_crates_io() {
+            if !http_client_available() {
+                error!(
+                    "Crate {} specified in the configuration file points to a git repository, but this binary has been compiled without an http client dependency.",
+                    a_crate.0
+                );
+                return Err(String::from("Invalid crate reference in configuration").into());
+            }
             locally_unavailable_crates.push(a_crate);
             continue;
         }
