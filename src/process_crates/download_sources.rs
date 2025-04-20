@@ -1,5 +1,459 @@
-fn download_sources(sources: Vec<(String, Dependency)>) ->  {}
+use std::collections::HashMap;
 
-fn download_crates_io_sources(sources: &[(String, Dependency)]) {}
+use cargo_toml::Dependency;
+use log::{debug, error, info, trace, warn};
 
-fn download_github_sources(sources: &[(String, Dependency)]) {}
+use crate::StdErrorS;
+
+use super::{CrateGitInformation, ExternalCrateSource, SortedCrates};
+
+pub(crate) fn download_sources(
+    sources: SortedCrates,
+) -> Result<HashMap<String, Vec<u8>>, StdErrorS> {
+    info!("Starting download of external crate sources");
+    let mut downloaded_sources = HashMap::new();
+    let mut crates_io_sources = Vec::new();
+    let mut git_sources = Vec::new();
+
+    debug!(
+        "Categorizing {} unavailable crates by source type",
+        sources.locally_unavailable_crates.len()
+    );
+    for crate_to_download in sources.locally_unavailable_crates.into_iter() {
+        trace!(
+            "Processing crate '{}' from source {:?}",
+            crate_to_download.0, crate_to_download.1
+        );
+        match crate_to_download.1 {
+            ExternalCrateSource::CratesIo => {
+                debug!(
+                    "Adding '{}' to crates.io download queue",
+                    crate_to_download.0
+                );
+                crates_io_sources.push((crate_to_download.0, crate_to_download.2))
+            }
+            ExternalCrateSource::Git(ref info) => {
+                debug!(
+                    "Adding '{}' to git download queue with info {:?}",
+                    crate_to_download.0, info
+                );
+                git_sources.push(crate_to_download)
+            }
+        }
+    }
+
+    info!(
+        "Downloading {} crates from crates.io",
+        crates_io_sources.len()
+    );
+    match download_crates_io_sources(&crates_io_sources) {
+        Ok(sources) => {
+            debug!(
+                "Successfully downloaded {} crates from crates.io",
+                sources.len()
+            );
+            sources.into_iter().for_each(|(name, data)| {
+                trace!(
+                    "Adding crates.io source '{}' ({} bytes) to results",
+                    name,
+                    data.len()
+                );
+                _ = downloaded_sources.insert(name, data)
+            });
+        }
+        Err(e) => {
+            error!("Failed to download crates.io sources: {}", e);
+            return Err(e);
+        }
+    }
+
+    info!("Downloading {} crates from git sources", git_sources.len());
+    match download_git_sources(&git_sources) {
+        Ok(sources) => {
+            debug!("Successfully downloaded {} crates from git", sources.len());
+            sources.into_iter().for_each(|(name, data)| {
+                trace!(
+                    "Adding git source '{}' ({} bytes) to results",
+                    name,
+                    data.len()
+                );
+                _ = downloaded_sources.insert(name, data)
+            });
+        }
+        Err(e) => {
+            error!("Failed to download git sources: {}", e);
+            return Err(e);
+        }
+    }
+
+    info!(
+        "Successfully downloaded all {} external sources",
+        downloaded_sources.len()
+    );
+    Ok(downloaded_sources)
+}
+
+fn download_crates_io_sources(
+    sources: &[(String, Dependency)],
+) -> Result<HashMap<String, Vec<u8>>, StdErrorS> {
+    info!("Starting download of {} crates.io sources", sources.len());
+    let mut downloaded: HashMap<String, Vec<u8>> = HashMap::new();
+
+    for (name, dependency) in sources {
+        debug!("Processing crates.io dependency '{}'", name);
+
+        // Extract package name (might be different from dependency name)
+        let package_name = match dependency {
+            Dependency::Detailed(detail) => {
+                let pkg_name = detail.package.clone().unwrap_or_else(|| name.clone());
+                if pkg_name != *name {
+                    debug!("Dependency '{}' uses package name '{}'", name, pkg_name);
+                }
+                pkg_name
+            }
+            _ => name.clone(),
+        };
+
+        // Extract version from dependency
+        let version = match dependency {
+            Dependency::Simple(version) => {
+                debug!(
+                    "Using simple version '{}' for dependency '{}'",
+                    version, name
+                );
+                version.clone()
+            }
+            Dependency::Detailed(detail) => match &detail.version {
+                Some(v) => {
+                    debug!("Using detailed version '{}' for dependency '{}'", v, name);
+                    v.clone()
+                }
+                None => {
+                    error!("No version specified for crates.io dependency '{}'", name);
+                    return Err(format!(
+                        "No version specified for crates.io dependency '{}'",
+                        name
+                    )
+                    .into());
+                }
+            },
+            Dependency::Inherited(_) => {
+                error!(
+                    "Cannot deduce crate version for crate {} from inherented dependency!",
+                    name
+                );
+                return Err(
+                    String::from("Unable to parse crate version: Malformed configuration").into(),
+                );
+            }
+        };
+
+        // First try static.crates.io URL
+        let url = format!(
+            "https://static.crates.io/crates/{}/{}-{}.crate",
+            package_name, package_name, version
+        );
+        trace!("Attempting download from static URL: {}", url);
+
+        match minreq::get(&url).send() {
+            Ok(response) => {
+                if response.status_code == 200 {
+                    info!(
+                        "Successfully downloaded '{}' v{} from static.crates.io",
+                        name, version
+                    );
+                    downloaded.insert(name.clone(), response.into_bytes());
+                    continue;
+                } else {
+                    warn!(
+                        "Static URL download failed for '{}' with status {}, falling back to API",
+                        name, response.status_code
+                    );
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Static URL request failed for '{}': {}, falling back to API",
+                    name, e
+                );
+            }
+        }
+
+        // Fall back to API endpoint if static URL fails
+        let api_url = format!(
+            "https://crates.io/api/v1/crates/{}/{}/download",
+            package_name, version
+        );
+        trace!("Attempting download from API URL: {}", api_url);
+
+        match minreq::get(&api_url).send() {
+            Ok(api_response) => {
+                if api_response.status_code == 200 {
+                    info!(
+                        "Successfully downloaded '{}' v{} from crates.io API",
+                        name, version
+                    );
+                    downloaded.insert(name.clone(), api_response.into_bytes());
+                } else {
+                    error!(
+                        "Failed to download crate '{}': HTTP status {}",
+                        name, api_response.status_code
+                    );
+                    return Err(format!(
+                        "Failed to download crate '{}': HTTP status {}",
+                        name, api_response.status_code
+                    )
+                    .into());
+                }
+            }
+            Err(e) => {
+                error!("API request failed for '{}': {}", name, e);
+                return Err(format!("API request failed for '{}': {}", name, e).into());
+            }
+        }
+    }
+
+    info!(
+        "Successfully downloaded {} crates.io sources",
+        downloaded.len()
+    );
+    Ok(downloaded)
+}
+
+fn download_git_sources(
+    sources: &[(String, ExternalCrateSource, Dependency)],
+) -> Result<HashMap<String, Vec<u8>>, StdErrorS> {
+    info!("Starting download of {} git sources", sources.len());
+    let mut downloaded: HashMap<String, Vec<u8>> = HashMap::new();
+
+    for (name, source, dependency) in sources {
+        debug!("Processing git dependency '{}'", name);
+
+        if let ExternalCrateSource::Git(git_info) = source {
+            trace!("Git information for '{}': {:?}", name, git_info);
+
+            // Extract git URL from dependency
+            let git_url = match dependency {
+                Dependency::Detailed(detail) => match &detail.git {
+                    Some(url) => {
+                        debug!("Using git URL: {} for '{}'", url, name);
+                        url.clone()
+                    }
+                    None => {
+                        error!("No git URL specified for dependency '{}'", name);
+                        return Err(
+                            format!("No git URL specified for dependency '{}'", name).into()
+                        );
+                    }
+                },
+                _ => {
+                    error!("Invalid dependency format for git source '{}'", name);
+                    return Err(
+                        format!("Invalid dependency format for git source '{}'", name).into(),
+                    );
+                }
+            };
+
+            // Handle different git hosts
+            if git_url.contains("github.com") {
+                debug!("Processing GitHub repository for '{}'", name);
+
+                // Parse GitHub repository information
+                let repo_parts: Vec<&str> = git_url.trim_end_matches(".git").split('/').collect();
+                let owner = repo_parts[repo_parts.len() - 2];
+                let repo = repo_parts[repo_parts.len() - 1];
+                trace!("Parsed GitHub repo: owner='{}', repo='{}'", owner, repo);
+
+                // Construct download URL based on git reference type
+                let download_url = match git_info {
+                    CrateGitInformation::Branch(branch) => {
+                        info!(
+                            "Using branch '{}' for GitHub repo {}/{}",
+                            branch, owner, repo
+                        );
+                        format!(
+                            "https://github.com/{}/{}/archive/refs/heads/{}.zip",
+                            owner, repo, branch
+                        )
+                    }
+                    CrateGitInformation::Commit(commit) => {
+                        info!(
+                            "Using commit '{}' for GitHub repo {}/{}",
+                            commit, owner, repo
+                        );
+                        format!(
+                            "https://github.com/{}/{}/archive/{}.zip",
+                            owner, repo, commit
+                        )
+                    }
+                    CrateGitInformation::Tag(tag) => {
+                        info!("Using tag '{}' for GitHub repo {}/{}", tag, owner, repo);
+                        format!(
+                            "https://github.com/{}/{}/archive/refs/tags/{}.zip",
+                            owner, repo, tag
+                        )
+                    }
+                    CrateGitInformation::None => {
+                        warn!(
+                            "No specific git reference provided for '{}', trying main branch first",
+                            name
+                        );
+                        // Try main branch first
+                        let main_url = format!(
+                            "https://github.com/{}/{}/archive/refs/heads/main.zip",
+                            owner, repo
+                        );
+                        trace!("Attempting to download from main branch: {}", main_url);
+                        match minreq::get(&main_url).send() {
+                            Ok(main_response) => {
+                                if main_response.status_code == 200 {
+                                    info!("Successfully downloaded '{}' from main branch", name);
+                                    downloaded.insert(name.clone(), main_response.into_bytes());
+                                    continue;
+                                } else {
+                                    warn!(
+                                        "Main branch not found for '{}', falling back to stable branch",
+                                        name
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to request main branch for '{}': {}", name, e);
+                            }
+                        }
+
+                        // Fall back to stable branch
+                        info!("Trying stable branch for GitHub repo {}/{}", owner, repo);
+                        format!(
+                            "https://github.com/{}/{}/archive/refs/heads/stable.zip",
+                            owner, repo
+                        )
+                    }
+                };
+
+                trace!("Downloading from URL: {}", download_url);
+                match minreq::get(&download_url).send() {
+                    Ok(response) => {
+                        if response.status_code != 200 {
+                            error!(
+                                "Failed to download git source '{}': HTTP status {}",
+                                name, response.status_code
+                            );
+                            return Err(format!(
+                                "Failed to download git source '{}': HTTP status {}",
+                                name, response.status_code
+                            )
+                            .into());
+                        }
+
+                        info!(
+                            "Successfully downloaded git source '{}' ({} bytes)",
+                            name,
+                            response.as_bytes().len()
+                        );
+                        downloaded.insert(name.clone(), response.into_bytes());
+                    }
+                    Err(e) => {
+                        error!("Request failed for git source '{}': {}", name, e);
+                        return Err(
+                            format!("Request failed for git source '{}': {}", name, e).into()
+                        );
+                    }
+                }
+            } else if git_url.contains("gitlab.com") {
+                debug!("Processing GitLab repository for '{}'", name);
+
+                // Parse GitLab repository information
+                let repo_parts: Vec<&str> = git_url.trim_end_matches(".git").split('/').collect();
+                let owner = repo_parts[repo_parts.len() - 2];
+                let repo = repo_parts[repo_parts.len() - 1];
+                trace!("Parsed GitLab repo: owner='{}', repo='{}'", owner, repo);
+
+                // Construct download URL based on git reference type
+                let download_url = match git_info {
+                    CrateGitInformation::Branch(branch) => {
+                        info!(
+                            "Using branch '{}' for GitLab repo {}/{}",
+                            branch, owner, repo
+                        );
+                        format!(
+                            "https://gitlab.com/api/v4/projects/{}%2F{}/repository/archive.zip?sha={}",
+                            owner, repo, branch
+                        )
+                    }
+                    CrateGitInformation::Commit(commit) => {
+                        info!(
+                            "Using commit '{}' for GitLab repo {}/{}",
+                            commit, owner, repo
+                        );
+                        format!(
+                            "https://gitlab.com/api/v4/projects/{}%2F{}/repository/archive.zip?sha={}",
+                            owner, repo, commit
+                        )
+                    }
+                    CrateGitInformation::Tag(tag) => {
+                        info!("Using tag '{}' for GitLab repo {}/{}", tag, owner, repo);
+                        format!(
+                            "https://gitlab.com/api/v4/projects/{}%2F{}/repository/archive.zip?sha={}",
+                            owner, repo, tag
+                        )
+                    }
+                    CrateGitInformation::None => {
+                        warn!(
+                            "No specific git reference provided for '{}', using default branch",
+                            name
+                        );
+                        format!(
+                            "https://gitlab.com/api/v4/projects/{}%2F{}/repository/archive.zip",
+                            owner, repo
+                        )
+                    }
+                };
+
+                trace!("Downloading from URL: {}", download_url);
+                match minreq::get(&download_url).send() {
+                    Ok(response) => {
+                        if response.status_code != 200 {
+                            error!(
+                                "Failed to download git source '{}': HTTP status {}",
+                                name, response.status_code
+                            );
+                            return Err(format!(
+                                "Failed to download git source '{}': HTTP status {}",
+                                name, response.status_code
+                            )
+                            .into());
+                        }
+
+                        info!(
+                            "Successfully downloaded git source '{}' ({} bytes)",
+                            name,
+                            response.as_bytes().len()
+                        );
+                        downloaded.insert(name.clone(), response.into_bytes());
+                    }
+                    Err(e) => {
+                        error!("Request failed for git source '{}': {}", name, e);
+                        return Err(
+                            format!("Request failed for git source '{}': {}", name, e).into()
+                        );
+                    }
+                }
+            } else {
+                warn!("Git host not supported: {}", git_url);
+                error!(
+                    "Unsupported git host for dependency '{}': {}",
+                    name, git_url
+                );
+                return Err(format!(
+                    "Unsupported git host for dependency '{}': {}",
+                    name, git_url
+                )
+                .into());
+            }
+        }
+    }
+
+    info!("Successfully downloaded {} git sources", downloaded.len());
+    Ok(downloaded)
+}

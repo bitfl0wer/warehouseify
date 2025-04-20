@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::{Command, exit};
 use std::sync::OnceLock;
 
@@ -8,13 +8,14 @@ use cli::Args;
 use config::ConfigFile;
 use dependencies::{Crate, list_missing_dependencies};
 use log::*;
+use process_crates::sort_crates_into_buckets;
 use semver::VersionReq;
 
-mod cli;
-mod config;
-mod dependencies;
-mod output;
-mod process_crates;
+pub(crate) mod cli;
+pub(crate) mod config;
+pub(crate) mod dependencies;
+pub(crate) mod output;
+pub(crate) mod process_crates;
 
 static CLI_ARGUMENTS: OnceLock<Args> = OnceLock::new();
 pub(crate) type StdError<'a> = Box<dyn std::error::Error + 'a>;
@@ -63,13 +64,14 @@ fn main() -> Result<(), StdErrorS> {
         }
     };
     env_logger::Builder::new()
-        .filter_level(log_level)
+        .filter(None, LevelFilter::Off)
+        .filter(Some("warehouseify"), log_level)
         .try_init()?;
     debug!("Hello, world!");
     let config = ConfigFile::try_parse("config.toml".into())?;
     trace!("Parsed config: {:#?}", &config);
     let missing_dependencies = list_missing_dependencies(&config.dependencies)?;
-    if !cli_arguments.no_confirm {
+    if !cli_arguments.no_confirm && !missing_dependencies.is_empty() {
         println!(
             r#"The following dependencies have been determined to be missing on the host system: {}. Would you like to install them by using "cargo install"? [y/N]"#,
             fmt_missing_dependencies(&missing_dependencies)
@@ -91,7 +93,28 @@ fn main() -> Result<(), StdErrorS> {
             );
             exit(1)
         }
+    } else if !missing_dependencies.is_empty() {
+        install_missing_dependencies(
+            missing_dependencies
+                .iter()
+                .cloned()
+                .collect::<Vec<Crate>>()
+                .as_slice(),
+        )?;
     }
+    let sorted_crates = sort_crates_into_buckets(config.crates.crates)?;
+    let mut size = 0u128;
+    #[cfg(feature = "http-client")]
+    let mut retrieved_crates = crate::process_crates::download_sources(sorted_crates)?;
+    for item in retrieved_crates.iter() {
+        size = match size.checked_add(item.1.len() as u128) {
+            Some(v) => v,
+            None => u128::MAX,
+        };
+    }
+    debug!("Received {} kilobytes in crate source code", size / 1000);
+    #[cfg(not(feature = "http-client"))]
+    let mut retrieved_crates = HashMap::new();
     Ok(())
 }
 

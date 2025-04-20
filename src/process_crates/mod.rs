@@ -7,18 +7,15 @@ use log::error;
 use crate::config::DependenciesConfig;
 use crate::{Crate, StdError, StdErrorS};
 
-mod build_sources;
+pub(crate) mod build_sources;
 #[cfg(feature = "http-client")]
-mod download_sources;
-mod edit_sources;
+pub(crate) mod download_sources;
+pub(crate) mod edit_sources;
 
-fn process_crates(
-    build_dependencies: &[DependenciesConfig],
-    crate_information: DepsSet,
-) -> Result<HashMap<Crate, Vec<u8>>, StdError<'static>> {
-    let sorted_crates = sort_crates_into_buckets(crate_information)?;
-    todo!()
-}
+pub(crate) use build_sources::*;
+#[cfg(feature = "http-client")]
+pub(crate) use download_sources::*;
+pub(crate) use edit_sources::*;
 
 /// Whether an http client is available in the current runtime environment.
 fn http_client_available() -> bool {
@@ -28,12 +25,26 @@ fn http_client_available() -> bool {
     return true;
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ExternalCrateSource {
+    CratesIo,
+    Git(CrateGitInformation),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum CrateGitInformation {
+    Branch(String),
+    Commit(String),
+    Tag(String),
+    None,
+}
+
 pub(crate) struct SortedCrates {
-    pub(crate) locally_unavailable_crates: Vec<(String, Dependency)>,
+    pub(crate) locally_unavailable_crates: Vec<(String, ExternalCrateSource, Dependency)>,
     pub(crate) locally_available_crates: Vec<(String, Dependency)>,
 }
 
-fn sort_crates_into_buckets(crates: DepsSet) -> Result<SortedCrates, StdErrorS> {
+pub(crate) fn sort_crates_into_buckets(crates: DepsSet) -> Result<SortedCrates, StdErrorS> {
     let mut locally_available_crates = Vec::new();
     let mut locally_unavailable_crates = Vec::new();
     for a_crate in crates.into_iter() {
@@ -45,7 +56,7 @@ fn sort_crates_into_buckets(crates: DepsSet) -> Result<SortedCrates, StdErrorS> 
                 );
                 return Err(String::from("Invalid crate reference in configuration").into());
             }
-            locally_unavailable_crates.push(a_crate);
+            locally_unavailable_crates.push((a_crate.0, ExternalCrateSource::CratesIo, a_crate.1));
             continue;
         }
         if let Some(crate_detail) = a_crate.1.detail() {
@@ -57,7 +68,20 @@ fn sort_crates_into_buckets(crates: DepsSet) -> Result<SortedCrates, StdErrorS> 
                     );
                     return Err(String::from("Invalid crate reference in configuration").into());
                 }
-                locally_unavailable_crates.push(a_crate);
+                let git_information = if let Some(commit_hash) = &crate_detail.rev {
+                    CrateGitInformation::Commit(commit_hash.clone())
+                } else if let Some(tag_name) = &crate_detail.tag {
+                    CrateGitInformation::Tag(tag_name.clone())
+                } else if let Some(branch_name) = &crate_detail.branch {
+                    CrateGitInformation::Branch(branch_name.clone())
+                } else {
+                    CrateGitInformation::None
+                };
+                locally_unavailable_crates.push((
+                    a_crate.0,
+                    ExternalCrateSource::Git(git_information),
+                    a_crate.1,
+                ));
                 continue;
             }
             if let Some(local_path) = crate_detail.path.clone() {

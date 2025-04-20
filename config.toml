@@ -1,9 +1,6 @@
 [crates]
-crate = "0.22.1"
-more_arguments = { version = "1.29.32", features = [
-    "crazy",
-    "features",
-], default_features = false, git = "https://gitrepo.com/org/repo", branch = "steak" }
+inferno = "0.12.2"
+spider_cli = "2.36.84"
 
 [options]
 architectures = ["x86_64-unknown-linux-gnu"]
