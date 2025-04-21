@@ -1,5 +1,4 @@
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::collections::HashSet;
 use std::process::{Command, exit};
 use std::sync::OnceLock;
 
@@ -19,6 +18,7 @@ pub(crate) mod output;
 pub(crate) mod process_crates;
 
 static CLI_ARGUMENTS: OnceLock<Args> = OnceLock::new();
+static SECRET: OnceLock<minisign::SecretKeyBox> = OnceLock::new();
 pub(crate) type StdError<'a> = Box<dyn std::error::Error + 'a>;
 /// [StdError] with a `'static` lifetime.
 pub(crate) type StdErrorS = StdError<'static>;
@@ -70,6 +70,21 @@ fn main() -> Result<(), StdErrorS> {
         .try_init()?;
     debug!("Hello, world!");
     let config = ConfigFile::try_parse("config.toml".into())?;
+    if cli_arguments.signing_key.is_none() && config.options.signing_key.is_none() {
+        error!(
+            r#"You must supply a minisign signing key. Either set the "options.signing_key" variable in your configuration file, or provide it through the cli using the "--signing-key" flag."#
+        );
+        exit(1);
+    } else if let Some(secret) = &cli_arguments.signing_key {
+        SECRET.set(secret.clone()).unwrap()
+    } else if let Some(secret) = &config.options.signing_key {
+        SECRET
+            .set(
+                minisign::SecretKeyBox::from_string(secret)
+                    .expect("invalid or malformed minisign signing key supplied"),
+            )
+            .unwrap()
+    }
     trace!("Parsed config: {:#?}", &config);
     let missing_dependencies = list_missing_dependencies(&config.dependencies)?;
     if !cli_arguments.no_confirm && !missing_dependencies.is_empty() {
@@ -89,7 +104,7 @@ fn main() -> Result<(), StdErrorS> {
                     .as_slice(),
             )?;
         } else {
-            eprintln!(
+            error!(
                 "Cannot proceed without installing missing dependencies. Either manually install them or disable them in your configuration file."
             );
             exit(1)
