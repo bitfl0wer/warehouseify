@@ -5,6 +5,7 @@ spider_cli = "2.36.84"
 [options]
 architectures = ["x86_64-unknown-linux-gnu"]
 workspace_path = "./warehousify/"
+verifying_key = "a_key"
 
 [dependencies]
 cargo-auditable = { enabled = true, version = "0.6.0" }
