@@ -3,9 +3,9 @@ inferno = "0.12.2"
 spider_cli = "2.36.84"
 
 [options]
-architectures = ["x86_64-unknown-linux-gnu"]
 workspace_path = "./warehousify/"
-verifying_key = "a_key"
+verifying_key = "RWShENTklmu4qg2Xk0yffAuCkzZv74VieiE8UST9SLnU/AQloFfe/OuY"
+signing_key = "RWQAAEIyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoRDU5JZruKooeVuIuT7Mme2mPxByDCwSOU42VmWePJ8V92r9D4va8w2Xk0yffAuCkzZv74VieiE8UST9SLnU/AQloFfe/OuYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 [dependencies]
 cargo-auditable = { enabled = true, version = "0.6.0" }
