@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::process::{Command, exit};
 use std::sync::OnceLock;
 
@@ -8,7 +9,7 @@ use cli::Args;
 use config::ConfigFile;
 use dependencies::{Crate, list_missing_dependencies};
 use log::*;
-use process_crates::sort_crates_into_buckets;
+use process_crates::{sort_crates_into_buckets, write_tar_to_build_dir};
 use semver::VersionReq;
 
 pub(crate) mod cli;
@@ -105,16 +106,20 @@ fn main() -> Result<(), StdErrorS> {
     let sorted_crates = sort_crates_into_buckets(config.crates.crates)?;
     let mut size = 0u128;
     #[cfg(feature = "http-client")]
-    let mut retrieved_crates = crate::process_crates::download_sources(sorted_crates)?;
-    for item in retrieved_crates.iter() {
-        size = match size.checked_add(item.1.len() as u128) {
-            Some(v) => v,
-            None => u128::MAX,
-        };
+    {
+        let downloaded_crates = crate::process_crates::download_sources(sorted_crates.clone())?;
+        for item in downloaded_crates.into_iter() {
+            size = match size.checked_add(item.1.len() as u128) {
+                Some(v) => v,
+                None => u128::MAX,
+            };
+            write_tar_to_build_dir(item.1, &config.options.workspace_path.join(item.0))?;
+        }
     }
+    // At this point, we have all "remote" crates downloaded in the build directory
+    // We can now edit the sources and compile them
+
     debug!("Received {} kilobytes in crate source code", size / 1000);
-    #[cfg(not(feature = "http-client"))]
-    let mut retrieved_crates = HashMap::new();
     Ok(())
 }
 
