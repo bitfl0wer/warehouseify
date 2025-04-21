@@ -51,7 +51,6 @@ pub(crate) struct CratesConfig {
 #[derive(Deserialize, Debug)]
 pub(crate) struct OptionsConfig {
     /// A list of architectures which all crates are being built for.
-    pub(crate) architectures: Vec<String>,
     pub(crate) workspace_path: PathBuf,
     pub(crate) signing_key: Option<String>,
     pub(crate) verifying_key: String,
