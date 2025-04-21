@@ -1,11 +1,9 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use cargo_toml::{Dependency, DepsSet};
 use log::error;
 
-use crate::config::DependenciesConfig;
-use crate::{Crate, StdError, StdErrorS};
+use crate::StdErrorS;
 
 pub(crate) mod build_sources;
 #[cfg(feature = "http-client")]
@@ -43,6 +41,7 @@ pub(crate) enum CrateGitInformation {
     None,
 }
 
+#[derive(Clone)]
 pub(crate) struct SortedCrates {
     pub(crate) locally_unavailable_crates: Vec<(String, ExternalCrateSource, Dependency)>,
     pub(crate) locally_available_crates: Vec<(String, Dependency)>,
