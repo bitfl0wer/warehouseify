@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::process::{Command, exit};
 use std::sync::OnceLock;
 
@@ -8,7 +9,7 @@ use cli::Args;
 use config::ConfigFile;
 use dependencies::{Crate, list_missing_dependencies};
 use log::*;
-use process_crates::{sort_crates_into_buckets, write_tar_to_build_dir};
+use process_crates::{add_build_meta_info, sort_crates_into_buckets, write_tar_to_build_dir};
 use semver::VersionReq;
 
 pub(crate) mod cli;
@@ -135,6 +136,38 @@ fn main() -> Result<(), StdErrorS> {
     // We can now edit the sources and compile them
 
     debug!("Received {} kilobytes in crate source code", size / 1000);
+
+    let mut all_crate_paths = Vec::new();
+    for item in sorted_crates.locally_unavailable_crates.iter() {
+        let crate_path = config
+            .options
+            .workspace_path
+            .join("build")
+            .join(item.0.clone());
+        trace!("Discovering crates in folder {:?}", crate_path);
+        // Add all subdirectories using cool iterator methods
+        match std::fs::read_dir(&crate_path) {
+            Ok(entries) => {
+                let additional_entries = entries
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.path())
+                    .filter(|path| path.is_dir())
+                    .collect::<Vec<PathBuf>>();
+                debug!("Found subcrate entries: {:?}", additional_entries);
+                all_crate_paths.extend(additional_entries.into_iter());
+            }
+            Err(e) => debug!("Error: {e}"),
+        };
+    }
+
+    for item in sorted_crates.locally_available_crates.iter() {
+        all_crate_paths.push(config.options.workspace_path.join(item.0.clone()));
+    }
+    for crate_path in all_crate_paths.iter() {
+        trace!("Modifying Cargo.toml of {:?}", crate_path);
+        add_build_meta_info(crate_path, &config.options.verifying_key)?;
+    }
+
     Ok(())
 }
 
