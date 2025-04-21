@@ -52,6 +52,7 @@ pub(crate) struct CratesConfig {
 pub(crate) struct OptionsConfig {
     /// A list of architectures which all crates are being built for.
     pub(crate) architectures: Vec<String>,
+    pub(crate) workspace_path: PathBuf,
 }
 
 #[derive(Deserialize, Debug)]
