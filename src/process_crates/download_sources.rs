@@ -4,6 +4,7 @@ use cargo_toml::Dependency;
 use log::{debug, error, info, trace, warn};
 
 use crate::StdErrorS;
+use crate::process_crates::unpack_gzip_archive;
 
 use super::{CrateGitInformation, ExternalCrateSource, SortedCrates};
 
@@ -162,7 +163,7 @@ fn download_crates_io_sources(
                         "Successfully downloaded '{}' v{} from static.crates.io",
                         name, version
                     );
-                    downloaded.insert(name.clone(), response.into_bytes());
+                    downloaded.insert(name.clone(), unpack_gzip_archive(response.into_bytes())?);
                     continue;
                 } else {
                     warn!(
@@ -193,7 +194,10 @@ fn download_crates_io_sources(
                         "Successfully downloaded '{}' v{} from crates.io API",
                         name, version
                     );
-                    downloaded.insert(name.clone(), api_response.into_bytes());
+                    downloaded.insert(
+                        name.clone(),
+                        unpack_gzip_archive(api_response.into_bytes())?,
+                    );
                 } else {
                     error!(
                         "Failed to download crate '{}': HTTP status {}",
@@ -220,6 +224,8 @@ fn download_crates_io_sources(
     Ok(downloaded)
 }
 
+// TODO this function is fucking huge but i really want to get this project done, refactoring can be
+// done later
 fn download_git_sources(
     sources: &[(String, ExternalCrateSource, Dependency)],
 ) -> Result<HashMap<String, Vec<u8>>, StdErrorS> {
@@ -308,7 +314,10 @@ fn download_git_sources(
                             Ok(main_response) => {
                                 if main_response.status_code == 200 {
                                     info!("Successfully downloaded '{}' from main branch", name);
-                                    downloaded.insert(name.clone(), main_response.into_bytes());
+                                    downloaded.insert(
+                                        name.clone(),
+                                        unpack_gzip_archive(main_response.into_bytes())?,
+                                    );
                                     continue;
                                 } else {
                                     warn!(
@@ -351,7 +360,8 @@ fn download_git_sources(
                             name,
                             response.as_bytes().len()
                         );
-                        downloaded.insert(name.clone(), response.into_bytes());
+                        downloaded
+                            .insert(name.clone(), unpack_gzip_archive(response.into_bytes())?);
                     }
                     Err(e) => {
                         error!("Request failed for git source '{}': {}", name, e);
@@ -430,7 +440,8 @@ fn download_git_sources(
                             name,
                             response.as_bytes().len()
                         );
-                        downloaded.insert(name.clone(), response.into_bytes());
+                        downloaded
+                            .insert(name.clone(), unpack_gzip_archive(response.into_bytes())?);
                     }
                     Err(e) => {
                         error!("Request failed for git source '{}': {}", name, e);
