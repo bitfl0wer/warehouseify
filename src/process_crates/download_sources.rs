@@ -8,6 +8,12 @@ use crate::process_crates::unpack_gzip_archive;
 
 use super::{CrateGitInformation, ExternalCrateSource, SortedCrates};
 
+// TODO
+// BUG
+// The download directory specified by the workspace path in the config MUST be empty before
+// this function is called for SECURITY REASONS! We should
+// also check AFTER downloading, ensuring that only the directories and files exist, which
+// we should have created.
 pub(crate) fn download_sources(
     sources: SortedCrates,
 ) -> Result<HashMap<String, Vec<u8>>, StdErrorS> {
