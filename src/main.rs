@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::os::unix::prelude::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, exit};
 use std::sync::OnceLock;
@@ -9,7 +10,7 @@ use cli::Args;
 use config::ConfigFile;
 use dependencies::{Crate, list_missing_dependencies};
 use log::*;
-use process_crates::{add_build_meta_info, sort_crates_into_buckets, write_tar_to_build_dir};
+use process_crates::{sort_crates_into_buckets, write_tar_to_build_dir};
 use semver::VersionReq;
 
 pub(crate) mod cli;
@@ -24,7 +25,15 @@ pub(crate) type StdError<'a> = Box<dyn std::error::Error + 'a>;
 /// [StdError] with a `'static` lifetime.
 pub(crate) type StdErrorS = StdError<'static>;
 
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    panic!(
+        "This is only available for Linux. DATA LOSS INCLUDING BUT NOT LIMITED TO IRREVERSIBLE DELETION OF YOUR ENTIRE STORAGE MEDIAS' CONTENTS CAN OCCUR ON OTHER OPERATING SYSTEMS. THE LICENSE USED FOR THIS SOFTWARE DICTATES THAT ABSOLUTELY NO WARRANTY IS PROVIDED IN ANY CASE."
+    )
+}
+
 #[allow(clippy::expect_used)]
+#[cfg(target_os = "linux")]
 fn main() -> Result<(), StdErrorS> {
     #[cfg(debug_assertions)]
     CLI_ARGUMENTS
@@ -86,6 +95,7 @@ fn main() -> Result<(), StdErrorS> {
             )
             .unwrap()
     }
+    check_minisign();
     trace!("Parsed config: {:#?}", &config);
     let missing_dependencies = list_missing_dependencies(&config.dependencies)?;
     if !cli_arguments.no_confirm && !missing_dependencies.is_empty() {
@@ -165,7 +175,10 @@ fn main() -> Result<(), StdErrorS> {
     }
     for crate_path in all_crate_paths.iter() {
         trace!("Modifying Cargo.toml of {:?}", crate_path);
-        add_build_meta_info(crate_path, &config.options.verifying_key)?;
+        process_crates::edit_sources::add_build_meta_info(
+            crate_path,
+            &config.options.verifying_key,
+        )?;
     }
 
     Ok(())
@@ -232,4 +245,23 @@ fn fmt_missing_dependencies(deps: &HashSet<Crate>) -> String {
     }
     trace!("{}", missing);
     missing
+}
+
+/// Panics, if `minisign --help` cannot be executed successfully (with an exit status code of `0`).
+fn check_minisign() {
+    match Command::new("minisign").arg("--help").status() {
+        Ok(status) => match status.code().is_some_and(|code| code == 0) {
+            true => (),
+            false => {
+                log::error!(
+                    "Executing minisign failed: Exit code {status}. Is minisign installed and available on your $PATH?"
+                );
+                panic!("Could not execute minisign successfully")
+            }
+        },
+        Err(e) => {
+            log::error!("Executing minisign failed: {e}");
+            panic!("Could not execute minisign successfully")
+        }
+    }
 }
