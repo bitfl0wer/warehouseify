@@ -1,6 +1,17 @@
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 use std::process::Command;
+use std::thread::sleep;
+use std::time::{Duration, SystemTime};
 
-use crate::{ConfigFile, StdErrorS};
+use build_command::create_build_command;
+use cargo_toml::Manifest;
+use log::{debug, error, trace, warn};
+use minisign::{PublicKey, SecretKey};
+
+use crate::process_crates::panic_on_dangerous_path;
+use crate::{CLI_ARGUMENTS, ConfigFile, SECRET, StdErrorS};
 
 use super::build_dir;
 
@@ -11,41 +22,159 @@ use super::build_dir;
 // also check AFTER building, ensuring that only the directories and files exist, which
 // we should have created.
 
-/// Returns `true` if `cargo-auditable` is a specified and enabled dependency within the config file.
-#[must_use]
-fn check_auditable(config: &ConfigFile) -> bool {
-    config
-        .dependencies
-        .properties
-        .get("cargo-auditable")
-        .is_some_and(|dep_props| dep_props.enabled)
-}
+mod build_command {
+    use log::trace;
 
-/// Create the build command for a given crate.
-fn create_build_command(config: &ConfigFile, crate_name: &str) -> Command {
-    let crate_name = crate_name.trim().to_lowercase();
-    let mut base_cmd = Command::new("cargo");
-    match check_auditable(config) {
-        true => {
+    use super::*;
+
+    /// Returns `true` if `cargo-auditable` is a specified and enabled dependency within the config file.
+    #[must_use]
+    fn check_auditable(config: &ConfigFile) -> bool {
+        config
+            .dependencies
+            .properties
+            .get("cargo-auditable")
+            .is_some_and(|dep_props| dep_props.enabled)
+    }
+
+    /// Create the build command for a given crate.
+    #[must_use]
+    pub(super) fn create_build_command(
+        config: &ConfigFile,
+        crate_path: &Path,
+        crate_name: &str,
+    ) -> Command {
+        let crate_name = crate_name.trim().to_lowercase();
+        trace!("Creating build command for {crate_name}");
+        let mut base_cmd = Command::new("cargo");
+        if check_auditable(config) {
             base_cmd.arg("auditable");
-        }
-        false => (),
-    };
-    base_cmd
-        .arg("build")
-        .arg(build_dir(config).join(crate_name))
-        .arg("--release");
-    base_cmd
+        };
+        base_cmd
+            .arg("build")
+            .arg("--manifest-path")
+            .arg(crate_path.join("Cargo.toml"))
+            .arg("--release");
+        base_cmd
+    }
 }
 
 /// Sign all binaries created in the output dir specified in the [ConfigFile]. Will error if any
 /// errors occur during signing.
-fn sign_binaries(config: &ConfigFile) -> Result<(), StdErrorS> {
+fn sign_file(config: &ConfigFile, file: &[u8]) -> Result<Vec<u8>, StdErrorS> {
     crate::check_minisign();
-    todo!()
+    Ok(minisign::sign(
+        Some(
+            &match PublicKey::from_base64(config.options.verifying_key.as_str()) {
+                Ok(key) => key,
+                Err(e) => {
+                    error!(
+                        "The public/verifying key provided in the config file is not valid Base64: {e}"
+                    );
+                    panic!("Malformed public key");
+                }
+            },
+        ),
+        &SECRET.get().expect("SECRET not set!"),
+        file,
+        None,
+        None,
+    )?.to_bytes())
 }
 
-fn verify_signatures(config: &ConfigFile) -> Result<(), StdErrorS> {
-    crate::check_minisign();
-    todo!()
+/// Builds a crate source, signs it and verifies the signature.
+///
+/// `name` is the name of the folder of the crate source on disk.
+///
+/// Outputs a triple `(String, Vec<u8>, Vec<u8>)` on success, where
+///
+/// - `(String, ` is the name of the binary, including the file suffix. The name is formatted as
+///   `[crate_name]-[crate-version]-[ISO 8601 build-timestamp]<.[suffix]>`.
+/// - ` Vec<u8>, ` (the first vector) contains the signature for the binary as bytes.
+/// - ` Vec<u8>)` (the second vector) contains the entire binary, as bytes.
+///
+/// Will error, if
+///
+/// - The signature could not be produced
+/// - The produced signature somehow doesn't match the computed signature
+/// - The crate fails to build
+/// - There is an I/O error
+pub(crate) fn build_sign_crate(
+    config: &ConfigFile,
+    crate_path: &Path,
+) -> Result<(String, Vec<u8>, Vec<u8>), StdErrorS> {
+    let manifest_path = crate_path.join("Cargo.toml");
+    trace!("Locating manifest at {manifest_path:?}");
+    let manifest = Manifest::from_path(manifest_path)?;
+    let name = &manifest.package().name;
+    let build_result = match create_build_command(config, crate_path, name).output() {
+        Ok(out) => out,
+        Err(e) => {
+            error!("cargo process died unexpectedly: {e}");
+            panic!("Couldn't build binary");
+        }
+    };
+    if build_result.status.code() != Some(0) {
+        error!(
+            "cargo returned exit code {} when building crate {name}",
+            build_result.status
+        );
+        return Err(format!(
+            "cargo returned exit code {}: {}",
+            build_result.status,
+            String::from_utf8_lossy(build_result.stderr.as_slice())
+        )
+        .into());
+    }
+    let release_binary_path = match crate_path
+        .join("target")
+        .join("release")
+        .join(name)
+        .canonicalize()
+    {
+        Ok(path) => {
+            trace!("Found release binary!");
+            path
+        }
+        Err(e) => {
+            error!(
+                r#"Release binary "{name}" not found. Does the crate have a bin target under a different name? {e}"#
+            );
+            todo!(
+                "Cargo projects with multiple targets or target binaries with names different from the crate name not yet supported. This is a planned feature, though."
+            );
+        }
+    };
+    assert!(release_binary_path.exists());
+    assert!(release_binary_path.is_file());
+    debug!("Trying to open release binary file at path {release_binary_path:?}");
+
+    let file_buf = match std::fs::read(release_binary_path) {
+        Ok(contents) => contents,
+        Err(e) => {
+            error!("Reading the binary file failed: {e}");
+            panic!("I/O error");
+        }
+    };
+    let timestamp = iso8601_timestamp::Timestamp::from(SystemTime::now()).to_string();
+    let signature = match sign_file(config, &file_buf) {
+        Ok(sig) => sig,
+        Err(e) => {
+            error!("Error when trying to sign the binary for {name}: {e}");
+            panic!("Signature error");
+        }
+    };
+    if config.options.autodelete_sources {
+        match std::fs::remove_dir_all(panic_on_dangerous_path(crate_path)) {
+            Ok(_) => (),
+            Err(e) => warn!(
+                "Unable to delete the sources for {name}; You will have to clean it up manually: {e}"
+            ),
+        };
+    }
+    Ok((
+        format!("{name}-{}-{timestamp}", manifest.package().version.get()?),
+        signature,
+        file_buf,
+    ))
 }

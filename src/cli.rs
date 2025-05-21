@@ -1,16 +1,20 @@
 use std::path::PathBuf;
 
-#[derive(Debug, clap::Parser)]
+#[derive(Debug, clap::Parser, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 #[command(name = "warehouseify")]
 #[command(version, long_about = None)]
 #[command(about = "⌂ Manage your own cargo-binstall repository.")]
 pub struct Args {
     #[arg(short, long, value_name = "FILE")]
+    #[zeroize(skip)]
     /// Path to a warehouseify config file. If not specified, will use default values.
     pub(crate) config: Option<PathBuf>,
     #[arg(long, value_name = "MINISIGN_KEY")]
-    /// Minisign secret key, used to sign the resulting binstall-ready crate. Provide it here, or in the warehousify config file under options.signing_key.
-    pub(crate) signing_key: Option<minisign::SecretKeyBox>,
+    /// Minisign secret key, used to sign the resulting binstall-ready crate. Provide it here, or in the warehousify config file under options.signing_key. Only supports encrypted secret keys.
+    pub(crate) signing_key: Option<String>,
+    #[arg(short = 'p', long, value_name = "MINISIGN_KEY")]
+    /// Minisign secret key password, used to unlock the signing key.
+    pub(crate) signing_key_password: String,
     #[arg(short, long, action = clap::ArgAction::Count)]
     /// Turn on verbose logging. The default log level is "WARN".
     /// Each instance of "v" in "-v" will increase the logging level by one. Logging levels are

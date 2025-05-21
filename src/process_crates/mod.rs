@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use cargo_toml::{Dependency, DepsSet};
 use log::error;
@@ -116,4 +116,22 @@ pub(crate) fn sort_crates_into_buckets(crates: DepsSet) -> Result<SortedCrates, 
         locally_available_crates,
         locally_unavailable_crates,
     })
+}
+
+/// Returns `true` if
+///
+/// - The given path does not (yet) exist
+/// - The given path exists, *and*:
+///     - The given path points to a directory
+///     - The directories contents are readable *and* there are no contents within this directory.
+pub(super) fn dir_check_is_empty(path: &Path) -> bool {
+    if !path.exists() {
+        true
+    } else {
+        path.is_dir()
+            && match path.read_dir() {
+                Ok(dir) => dir.count() == 0,
+                Err(_) => false,
+            }
+    }
 }

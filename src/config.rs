@@ -48,12 +48,14 @@ pub(crate) struct CratesConfig {
     pub(crate) crates: DepsSet,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 pub(crate) struct OptionsConfig {
     /// A list of architectures which all crates are being built for.
+    #[zeroize(skip)]
     pub(crate) workspace_path: PathBuf,
     pub(crate) signing_key: Option<String>,
     pub(crate) verifying_key: String,
+    pub(crate) autodelete_sources: bool,
 }
 
 #[derive(Deserialize, Debug)]

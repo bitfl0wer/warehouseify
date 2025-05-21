@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::os::unix::prelude::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, exit};
 use std::sync::OnceLock;
@@ -10,7 +9,7 @@ use cli::Args;
 use config::ConfigFile;
 use dependencies::{Crate, list_missing_dependencies};
 use log::*;
-use process_crates::{sort_crates_into_buckets, write_tar_to_build_dir};
+use process_crates::{artifact_dir, build_dir, sort_crates_into_buckets, write_tar_to_build_dir};
 use semver::VersionReq;
 
 pub(crate) mod cli;
@@ -20,10 +19,26 @@ pub(crate) mod output;
 pub(crate) mod process_crates;
 
 static CLI_ARGUMENTS: OnceLock<Args> = OnceLock::new();
-static SECRET: OnceLock<minisign::SecretKeyBox> = OnceLock::new();
+/// `PathBuf` to the directory containing the sources of the crates to be built.
+static PATH_SOURCES: OnceLock<PathBuf> = OnceLock::new();
+/// `PathBuf` to the directory containing the sources of the crate binaries that were built.
+static PATH_BINARIES: OnceLock<PathBuf> = OnceLock::new();
+static SECRET: OnceLock<minisign::SecretKey> = OnceLock::new();
 pub(crate) type StdError<'a> = Box<dyn std::error::Error + 'a>;
 /// [StdError] with a `'static` lifetime.
 pub(crate) type StdErrorS = StdError<'static>;
+
+/// Shorthand for `PATH_SOURCES.get().unwrap()`. As such, this method
+/// **will** panic if `PATH_SOURCES` has not been initialized at calltime.
+pub(crate) fn path_sources() -> &'static PathBuf {
+    PATH_SOURCES.get().unwrap()
+}
+
+/// Shorthand for `PATH_BINARIES.get().unwrap()`. As such, this method
+/// **will** panic if `PATH_BINARIES` has not been initialized at calltime.
+pub(crate) fn path_binaries() -> &'static PathBuf {
+    PATH_BINARIES.get().unwrap()
+}
 
 #[cfg(not(target_os = "linux"))]
 fn main() {
@@ -35,11 +50,16 @@ fn main() {
 #[allow(clippy::expect_used)]
 #[cfg(target_os = "linux")]
 fn main() -> Result<(), StdErrorS> {
+    use minisign::{SecretKey, SecretKeyBox};
+    use process_crates::{build_sign_crate, dir_check_is_empty};
+    use tar::Header;
+
     #[cfg(debug_assertions)]
     CLI_ARGUMENTS
         .set(Args {
             config: None,
             signing_key: None,
+            signing_key_password: String::from("Correct-Horse-Battery-Staple"),
             verbose: 4,
             no_confirm: false,
             locked: false,
@@ -86,15 +106,26 @@ fn main() -> Result<(), StdErrorS> {
         );
         exit(1);
     } else if let Some(secret) = &cli_arguments.signing_key {
-        SECRET.set(secret.clone()).unwrap()
+        SECRET
+            .set(
+                SecretKeyBox::from_string(secret)?
+                    .into_secret_key(Some(cli_arguments.signing_key_password.clone()))?,
+            )
+            .unwrap()
     } else if let Some(secret) = &config.options.signing_key {
         SECRET
             .set(
-                minisign::SecretKeyBox::from_string(secret)
-                    .expect("invalid or malformed minisign signing key supplied"),
+                SecretKeyBox::from_string(secret)?
+                    .into_secret_key(Some(cli_arguments.signing_key_password.clone()))?,
             )
             .unwrap()
     }
+
+    PATH_SOURCES.set(config.options.workspace_path.join("build/")).expect("Fatal: PATH_SOURCES has been set before warehousify initialized it. Something is wrong");
+    PATH_BINARIES.set(config.options.workspace_path.join("artifacts/")).expect("Fatal: PATH_BINARIES has been set before warehousify initialized it. Something is wrong");
+    debug!("Config parsed successfully.");
+    mkdirs(&config);
+
     check_minisign();
     trace!("Parsed config: {:#?}", &config);
     let missing_dependencies = list_missing_dependencies(&config.dependencies)?;
@@ -129,10 +160,15 @@ fn main() -> Result<(), StdErrorS> {
                 .as_slice(),
         )?;
     }
-    let sorted_crates = sort_crates_into_buckets(config.crates.crates)?;
+    let sorted_crates = sort_crates_into_buckets(config.crates.crates.clone())?;
     let mut size = 0u128;
     #[cfg(feature = "http-client")]
     {
+        if !dir_check_is_empty(&config.options.workspace_path.join(path_sources())) {
+            panic!(
+                "The `workspace_path` specified in the config file contains a folder `build` which is not empty. Exiting for security reasons."
+            );
+        }
         let downloaded_crates = crate::process_crates::download_sources(sorted_crates.clone())?;
         for item in downloaded_crates.into_iter() {
             size = match size.checked_add(item.1.len() as u128) {
@@ -141,11 +177,22 @@ fn main() -> Result<(), StdErrorS> {
             };
             write_tar_to_build_dir(item.1, &config.options.workspace_path.join(item.0))?;
         }
+        debug!("Received {} kilobytes in crate source code", size / 1000);
     }
+
+    #[cfg(not(feature = "http-client"))]
+    {
+        for _ in 0..5 {
+            warn!(
+                "{} warehouseify will edit, build and sign {} crate sources at <config.workspace_path>/build. Make absolutely sure that this folder only contains source code that you trust!",
+                Style::new().bold().paint("WARNING!"),
+                Style::new().bold().paint("any"),
+            )
+        }
+    }
+
     // At this point, we have all "remote" crates downloaded in the build directory
     // We can now edit the sources and compile them
-
-    debug!("Received {} kilobytes in crate source code", size / 1000);
 
     let mut all_crate_paths = Vec::new();
     for item in sorted_crates.locally_unavailable_crates.iter() {
@@ -154,7 +201,7 @@ fn main() -> Result<(), StdErrorS> {
             .workspace_path
             .join("build")
             .join(item.0.clone());
-        trace!("Discovering crates in folder {:?}", crate_path);
+        trace!("Discovering crates in folder {crate_path:?}",);
         // Add all subdirectories using cool iterator methods
         match std::fs::read_dir(&crate_path) {
             Ok(entries) => {
@@ -163,7 +210,7 @@ fn main() -> Result<(), StdErrorS> {
                     .map(|entry| entry.path())
                     .filter(|path| path.is_dir())
                     .collect::<Vec<PathBuf>>();
-                debug!("Found subcrate entries: {:?}", additional_entries);
+                debug!("Found subcrate entries: {additional_entries:?}",);
                 all_crate_paths.extend(additional_entries.into_iter());
             }
             Err(e) => debug!("Error: {e}"),
@@ -174,11 +221,44 @@ fn main() -> Result<(), StdErrorS> {
         all_crate_paths.push(config.options.workspace_path.join(item.0.clone()));
     }
     for crate_path in all_crate_paths.iter() {
-        trace!("Modifying Cargo.toml of {:?}", crate_path);
+        trace!("Modifying Cargo.toml of {crate_path:?}",);
         process_crates::edit_sources::add_build_meta_info(
             crate_path,
             &config.options.verifying_key,
         )?;
+    }
+    for crate_path in all_crate_paths.iter() {
+        trace!("Processing crate {crate_path:?} for building and signing");
+        let (binary_name, signature, binary_bytes) = build_sign_crate(&config, crate_path)?;
+        let mut tar_buf = Vec::with_capacity(binary_bytes.capacity());
+        match tar::Builder::new(&mut tar_buf).append_data(
+            &mut Header::new_gnu(),
+            &binary_name,
+            binary_bytes.as_slice(),
+        ) {
+            Ok(_) => debug!(".tar built for {binary_name}"),
+            Err(e) => {
+                error!("Error occurred when building .tar file for {binary_name}: {e}");
+                panic!("Error when tarballing file");
+            }
+        };
+        match std::fs::write(path_binaries().join(format!("{binary_name}.tar")), tar_buf) {
+            Ok(_) => debug!("Wrote {binary_name}.tar to disk!"),
+            Err(e) => {
+                error!("Could not write tar file for {binary_name} to disk: {e}");
+                panic!("I/O error");
+            }
+        };
+        match std::fs::write(
+            path_binaries().join(format!("{binary_name}.tar.sig")),
+            signature,
+        ) {
+            Ok(_) => debug!("Wrote {binary_name}.tar.sig to disk!"),
+            Err(e) => {
+                error!("Could not write signature file for {binary_name} to disk: {e}");
+                panic!("I/O error");
+            }
+        };
     }
 
     Ok(())
@@ -247,14 +327,15 @@ fn fmt_missing_dependencies(deps: &HashSet<Crate>) -> String {
     missing
 }
 
-/// Panics, if `minisign --help` cannot be executed successfully (with an exit status code of `0`).
+/// Panics, if `minisign --help` cannot be executed successfully (with an exit status code of `2` (exit code returned when invoking --help)).
 fn check_minisign() {
-    match Command::new("minisign").arg("--help").status() {
-        Ok(status) => match status.code().is_some_and(|code| code == 0) {
+    match Command::new("minisign").arg("--help").output() {
+        Ok(output) => match output.status.code().is_some_and(|code| code == 2) {
             true => (),
             false => {
                 log::error!(
-                    "Executing minisign failed: Exit code {status}. Is minisign installed and available on your $PATH?"
+                    "Executing minisign failed: Exit code {}. Is minisign installed and available on your $PATH?",
+                    output.status
                 );
                 panic!("Could not execute minisign successfully")
             }
@@ -263,5 +344,16 @@ fn check_minisign() {
             log::error!("Executing minisign failed: {e}");
             panic!("Could not execute minisign successfully")
         }
+    }
+}
+
+fn mkdirs(config: &ConfigFile) {
+    match std::fs::create_dir_all(build_dir(config)) {
+        Ok(_) => (),
+        Err(debug) => debug!("mkdirs: {debug}"),
+    }
+    match std::fs::create_dir_all(artifact_dir(config)) {
+        Ok(_) => (),
+        Err(debug) => debug!("mkdirs: {debug}"),
     }
 }

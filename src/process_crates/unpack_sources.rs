@@ -3,6 +3,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use flate2::bufread::GzDecoder;
+use log::error;
 
 use crate::{ConfigFile, StdErrorS};
 
@@ -25,12 +26,12 @@ pub(crate) fn write_tar_to_build_dir(
     path_to_package: &Path,
 ) -> Result<(), StdErrorS> {
     let destination_path = match path_to_package.ends_with("build") {
-        true => &panic_on_dangerous_path(path_to_package),
+        true => path_to_package,
         false => {
             // Insert "build" before the package name
             let mut path_vec = path_to_package.iter().collect::<Vec<&OsStr>>();
             path_vec.insert(path_vec.len().saturating_sub(1), OsStr::new("build"));
-            &panic_on_dangerous_path(&PathBuf::from_iter(path_vec.iter()))
+            &PathBuf::from_iter(path_vec.iter())
         }
     };
     let mut tarball_reader = tar::Archive::new(tarball.as_slice());
@@ -39,27 +40,32 @@ pub(crate) fn write_tar_to_build_dir(
 }
 
 /// Get the path to the directory containing the source files of the crates to compile.
-/// Panics, if the path is unsafe (e.g. `/`, `/etc`, `/var`, ...)
+/// Does NOT panic if the path is unsafe (e.g. `/`, `/etc`, `/var`, ...)
 pub(crate) fn build_dir(config: &ConfigFile) -> PathBuf {
-    panic_on_dangerous_path(&config.options.workspace_path.join("build/"))
+    config.options.workspace_path.join("build/")
 }
 
 /// Get the path to the directory where the compiled binaries are supposed to be located.
-/// Panics, if the path is unsafe (e.g. `/`, `/etc`, `/var`, ...)
+/// Does NOT panic if the path is unsafe (e.g. `/`, `/etc`, `/var`, ...)
 pub(crate) fn artifact_dir(config: &ConfigFile) -> PathBuf {
-    panic_on_dangerous_path(&config.options.workspace_path.join("artifacts/"))
-}
-
-pub(crate) fn delete_build_dir(config_file: &ConfigFile) {
-    std::fs::remove_dir_all(build_dir(config_file)).expect("Failed to cleanup build directory. Perhaps the user running this process does not have sufficient permissions to delete the directory")
+    config.options.workspace_path.join("artifacts/")
 }
 
 /// Panics, if the path is unsafe (e.g. `/`, `/etc`, `/var`, `/etc/.../` ...)
 #[allow(clippy::expect_used)]
 #[must_use]
-fn panic_on_dangerous_path(path: &Path) -> PathBuf {
+pub(crate) fn panic_on_dangerous_path(path: &Path) -> PathBuf {
     let path = if path.is_relative() {
-        &path.canonicalize().expect("Invalid path")
+        &match path.canonicalize() {
+            Ok(path) => path,
+            Err(e) => {
+                error!(
+                    r#"Error when attempting to canonicalize path {}: {e}"#,
+                    path.to_string_lossy()
+                );
+                panic!("Error canonicalizing path");
+            }
+        }
     } else {
         path
     };
