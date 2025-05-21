@@ -1,6 +1,6 @@
 [crates]
 exa = "0.10.1"
-spider_cli = "2.36.84"
+cargo-binstall = "1.12.5"
 
 [options]
 autodelete_sources = false
