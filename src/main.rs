@@ -50,9 +50,11 @@ fn main() {
 #[allow(clippy::expect_used)]
 #[cfg(target_os = "linux")]
 fn main() -> Result<(), StdErrorS> {
-    use minisign::{SecretKey, SecretKeyBox};
+    use minisign::SecretKeyBox;
     use process_crates::{build_sign_crate, dir_check_is_empty};
     use tar::Header;
+
+    println!("Running warehousify");
 
     #[cfg(debug_assertions)]
     CLI_ARGUMENTS
@@ -64,6 +66,7 @@ fn main() -> Result<(), StdErrorS> {
             no_confirm: false,
             locked: false,
             force: true,
+            quiet: 0,
         })
         .expect("You messed up.");
     #[cfg(debug_assertions)]
@@ -78,18 +81,33 @@ fn main() -> Result<(), StdErrorS> {
         .set(Args::parse())
         .expect("illegal state: CLI_ARGUMENTS initialized before they have been parsed");
     let cli_arguments = CLI_ARGUMENTS.get().expect("cli arguments are missing");
-    let log_level = match CLI_ARGUMENTS
+    let verbose_level = match CLI_ARGUMENTS
         .get()
         .expect("cli args have not been parsed")
         .verbose
     {
-        0 => LevelFilter::Warn,
-        1 => LevelFilter::Info,
-        2 => LevelFilter::Debug,
-        3 => LevelFilter::Trace,
+        0 => LevelFilter::Info,
+        1 => LevelFilter::Debug,
+        2 => LevelFilter::Trace,
         _ => {
             println!(
-                r#"Woah there! You don't need to supply a bajillion "-v"'s. 3 is the limit! Enabling trace logs anyways, because I'm nice :3"#
+                r#"Woah there! You don't need to supply a bajillion "-v"'s. 2 is the limit! Interpreting input as "verbose"."#
+            );
+            LevelFilter::Trace
+        }
+    };
+    let log_level = match CLI_ARGUMENTS
+        .get()
+        .expect("cli args have not been parsed")
+        .quiet
+    {
+        0 => verbose_level,
+        1 => LevelFilter::Warn,
+        2 => LevelFilter::Error,
+        3 => LevelFilter::Off,
+        _ => {
+            println!(
+                r#"Woah there! You don't need to supply a bajillion "-q"'s. 3 is the limit! Interpreting input as "off""#
             );
             LevelFilter::Trace
         }
@@ -164,6 +182,8 @@ fn main() -> Result<(), StdErrorS> {
     let mut size = 0u128;
     #[cfg(feature = "http-client")]
     {
+        // TODO: This is broken?
+        // BUG
         if !dir_check_is_empty(&config.options.workspace_path.join(path_sources())) {
             panic!(
                 "The `workspace_path` specified in the config file contains a folder `build` which is not empty. Exiting for security reasons."
@@ -222,10 +242,7 @@ fn main() -> Result<(), StdErrorS> {
     }
     for crate_path in all_crate_paths.iter() {
         trace!("Modifying Cargo.toml of {crate_path:?}",);
-        process_crates::edit_sources::add_build_meta_info(
-            crate_path,
-            &config.options.verifying_key,
-        )?;
+        process_crates::edit_sources::add_build_meta_info(crate_path, &config)?;
     }
     for crate_path in all_crate_paths.iter() {
         trace!("Processing crate {crate_path:?} for building and signing");
@@ -296,12 +313,11 @@ fn install_missing_dependencies(deps: &[Crate]) -> Result<(), StdErrorS> {
         command.arg(format!(r#"{}@{}"#, dependency.name, version));
     }
     let install_result = command.spawn()?.wait()?;
-    log::debug!("{:?}", install_result);
+    log::debug!("{install_result:?}");
     match install_result.success() {
         true => Ok(()),
         false => Err(format!(
-            "the installation of dependencies failed; cannot continue, cargo install exited with {}",
-            install_result
+            "the installation of dependencies failed; cannot continue, cargo install exited with {install_result}"
         )
         .into()),
     }
@@ -323,7 +339,7 @@ fn fmt_missing_dependencies(deps: &HashSet<Crate>) -> String {
     if missing.ends_with(", ") {
         let _ = missing.split_off(missing.len().saturating_sub(2));
     }
-    trace!("{}", missing);
+    trace!("{missing}");
     missing
 }
 

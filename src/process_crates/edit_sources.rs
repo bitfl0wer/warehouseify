@@ -1,34 +1,22 @@
 use std::fs;
 use std::path::Path;
 
-use cargo_toml::Manifest;
-use log::{debug, error, info, trace};
+use log::{debug, error, trace};
 
-use crate::StdErrorS;
+use crate::{ConfigFile, StdErrorS};
 
 pub(crate) fn add_build_meta_info(
     full_crate_path: &Path,
-    verifying_key: &str,
+    config: &ConfigFile,
 ) -> Result<(), StdErrorS> {
-    let mut crate_manifest = match Manifest::from_path(full_crate_path.join("Cargo.toml")) {
-        Ok(file) => file,
-        Err(e) => {
-            error!(
-                "Could not find or open Cargo.toml at path {}. Error: {e}",
-                full_crate_path.join("Cargo.toml").to_string_lossy()
-            );
-            return Err(String::from("encountered file read error").into());
-        }
-    };
-
-    trace!("Successfully loaded Cargo.toml manifest");
+    let verifying_key = &config.options.verifying_key;
 
     // Read the file content to work with the TOML structure directly
     let cargo_toml_path = full_crate_path.join("Cargo.toml");
     let toml_content = match fs::read_to_string(&cargo_toml_path) {
         Ok(content) => content,
         Err(e) => {
-            error!("Failed to read Cargo.toml: {}", e);
+            error!("Failed to read Cargo.toml: {e}");
             return Err(String::from("failed to read Cargo.toml").into());
         }
     };
@@ -37,7 +25,7 @@ pub(crate) fn add_build_meta_info(
     let mut toml_value: toml::Value = match toml::from_str(&toml_content) {
         Ok(value) => value,
         Err(e) => {
-            error!("Failed to parse Cargo.toml: {}", e);
+            error!("Failed to parse Cargo.toml: {e}");
             return Err(String::from("failed to parse Cargo.toml").into());
         }
     };
@@ -90,14 +78,24 @@ pub(crate) fn add_build_meta_info(
         }
     };
 
-    // Get or create the binstall table
     if !metadata_table.contains_key("binstall") {
         debug!("Creating [package.metadata.binstall] section");
         metadata_table.insert(
             "binstall".to_string(),
             toml::Value::Table(toml::value::Table::new()),
         );
+    } else {
+        debug!("Removing pre-existing [package.metadata.binstall] section");
+        metadata_table.remove("binstall");
+        debug!("Creating [package.metadata.binstall] section");
+        metadata_table.insert(
+            "binstall".to_string(),
+            toml::Value::Table(toml::value::Table::new()),
+        );
     }
+
+    // TODO: Now that we can assure that the "binstall" table did not exist before this point,
+    //       we can change the below code to fit this assumption better
 
     let binstall_table = match metadata_table.get_mut("binstall") {
         Some(value) => match value.as_table_mut() {
@@ -112,6 +110,19 @@ pub(crate) fn add_build_meta_info(
             return Err(String::from("failed to access binstall").into());
         }
     };
+
+    debug!(
+        r#"Inserting "pkg-url" = "{}" into [package.metadata.binstall]"#,
+        &config.options.pkg_url
+    );
+    // insert the pkg_url from the config
+    binstall_table.insert(
+        "pkg_url".to_string(),
+        toml::Value::String(config.options.pkg_url.to_owned()),
+    );
+    debug!(r#"Inserting "pkg-fmt" = "tar" into [package.metadata.binstall]"#);
+    // insert the pkg_fmt (tar)
+    binstall_table.insert("pkg_fmt".to_string(), toml::Value::String("tar".to_owned()));
 
     // Get or create the signing table
     if !binstall_table.contains_key("signing") {
@@ -150,19 +161,19 @@ pub(crate) fn add_build_meta_info(
     );
 
     if existing {
-        info!("Updated existing [package.metadata.binstall.signing] section");
+        debug!("Updated existing [package.metadata.binstall.signing] section");
     } else {
-        info!("Created new [package.metadata.binstall.signing] section");
+        debug!("Created new [package.metadata.binstall.signing] section");
     }
 
     debug!("Algorithm set to 'minisign'");
-    debug!("Pubkey set to '{}'", verifying_key);
+    debug!("Pubkey set to '{verifying_key}'");
 
     // Write the modified TOML back to the file
     let new_toml_content = match toml::to_string(&toml_value) {
         Ok(content) => content,
         Err(e) => {
-            error!("Failed to serialize Cargo.toml: {}", e);
+            error!("Failed to serialize Cargo.toml: {e}");
             return Err(String::from("failed to serialize Cargo.toml").into());
         }
     };
@@ -171,11 +182,11 @@ pub(crate) fn add_build_meta_info(
 
     match fs::write(&cargo_toml_path, new_toml_content) {
         Ok(_) => {
-            info!("Successfully wrote updated Cargo.toml to disk");
+            debug!("Successfully wrote updated Cargo.toml to disk");
             Ok(())
         }
         Err(e) => {
-            error!("Failed to write Cargo.toml: {}", e);
+            error!("Failed to write Cargo.toml: {e}");
             Err(String::from("failed to write Cargo.toml").into())
         }
     }

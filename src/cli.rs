@@ -15,11 +15,18 @@ pub struct Args {
     #[arg(short = 'p', long, value_name = "MINISIGN_KEY")]
     /// Minisign secret key password, used to unlock the signing key.
     pub(crate) signing_key_password: String,
-    #[arg(short, long, action = clap::ArgAction::Count)]
-    /// Turn on verbose logging. The default log level is "WARN".
+    #[arg(short = 'v', long, action = clap::ArgAction::Count)]
+    /// Turn on verbose logging. The default log level is "INFO".
     /// Each instance of "v" in "-v" will increase the logging level by one. Logging levels are
-    /// INFO (-v), DEBUG (-vv) and TRACE (-vvv)
+    /// DEBUG (-v) and TRACE (-vv).
+    /// "Quiet" settings override "verbose" settings.
     pub(crate) verbose: u8,
+    #[arg(short = 'q', long, action = clap::ArgAction::Count)]
+    /// Configure "quiet" mode. The default log level is "INFO".
+    /// Each instance of "q" in "-q" will decrease the logging level by one. Logging levels are
+    /// WARN (-q), ERROR (-qq) and None (completely silent, except for regular stdout) (-qqq).
+    /// "Quiet" settings override "verbose" settings.
+    pub(crate) quiet: u8,
     #[arg(short, long, default_value_t = false)]
     /// Assume "yes" to all questions asked.
     pub(crate) no_confirm: bool,

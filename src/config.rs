@@ -56,6 +56,7 @@ pub(crate) struct OptionsConfig {
     pub(crate) signing_key: Option<String>,
     pub(crate) verifying_key: String,
     pub(crate) autodelete_sources: bool,
+    pub(crate) pkg_url: String,
 }
 
 #[derive(Deserialize, Debug)]

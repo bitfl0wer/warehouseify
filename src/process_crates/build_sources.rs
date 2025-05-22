@@ -1,19 +1,15 @@
-use std::fs::File;
-use std::io::Read;
 use std::path::Path;
 use std::process::Command;
-use std::thread::sleep;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use build_command::create_build_command;
 use cargo_toml::Manifest;
-use log::{debug, error, trace, warn};
-use minisign::{PublicKey, SecretKey};
+use log::{debug, error, info, trace, warn};
+use minisign::PublicKey;
 
 use crate::process_crates::panic_on_dangerous_path;
-use crate::{CLI_ARGUMENTS, ConfigFile, SECRET, StdErrorS};
+use crate::{ConfigFile, SECRET, StdErrorS};
 
-use super::build_dir;
 
 // TODO
 // BUG
@@ -75,7 +71,7 @@ fn sign_file(config: &ConfigFile, file: &[u8]) -> Result<Vec<u8>, StdErrorS> {
                 }
             },
         ),
-        &SECRET.get().expect("SECRET not set!"),
+        SECRET.get().expect("SECRET not set!"),
         file,
         None,
         None,
@@ -107,6 +103,7 @@ pub(crate) fn build_sign_crate(
     trace!("Locating manifest at {manifest_path:?}");
     let manifest = Manifest::from_path(manifest_path)?;
     let name = &manifest.package().name;
+    info!("Building crate {name}...");
     let build_result = match create_build_command(config, crate_path, name).output() {
         Ok(out) => out,
         Err(e) => {
@@ -172,6 +169,7 @@ pub(crate) fn build_sign_crate(
             ),
         };
     }
+    info!("Done!");
     Ok((
         format!("{name}-{}-{timestamp}", manifest.package().version.get()?),
         signature,

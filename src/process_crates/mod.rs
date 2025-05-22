@@ -15,7 +15,6 @@ pub(crate) mod unpack_sources;
 pub(crate) use build_sources::*;
 #[cfg(feature = "http-client")]
 pub(crate) use download_sources::*;
-pub(crate) use edit_sources::*;
 #[cfg(feature = "http-client")]
 pub(crate) use unpack_sources::*;
 

@@ -56,15 +56,14 @@ pub(crate) fn list_missing_dependencies(
     dependency_requirements: &DependenciesConfig,
 ) -> Result<HashSet<Crate>, StdError<'static>> {
     let installed_crates = get_installed_crates_on_host()?;
-    log::trace!("List of crates installed on host: {:?}", installed_crates);
+    log::trace!("List of crates installed on host: {installed_crates:?}");
 
     let mut crates_not_found = HashSet::new();
     for (required_dependency_name, required_dependency_info) in
         dependency_requirements.properties.iter()
     {
         log::trace!(
-            "Now processing dependency {} in config file",
-            required_dependency_name
+            "Now processing dependency {required_dependency_name} in config file"
         );
         if !required_dependency_info.enabled {
             log::debug!(
@@ -127,8 +126,7 @@ pub(crate) fn list_missing_dependencies(
         crates_not_found.insert(crateified_dependency);
     }
     log::debug!(
-        "Determined the following crates to be missing on the host: {:?}",
-        crates_not_found
+        "Determined the following crates to be missing on the host: {crates_not_found:?}"
     );
     Ok(crates_not_found)
 }
@@ -197,9 +195,7 @@ fn get_installed_crates_on_host() -> Result<HashMap<String, Crate>, StdError<'st
         };
 
         log::trace!(
-            r#"Inserted crate "{}" version "{}" into installed_crates map"#,
-            crate_name,
-            crate_version
+            r#"Inserted crate "{crate_name}" version "{crate_version}" into installed_crates map"#
         );
         installed_crates.insert(
             crate_name.clone(),
