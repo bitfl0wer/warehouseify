@@ -51,7 +51,7 @@ fn main() {
 #[cfg(target_os = "linux")]
 fn main() -> Result<(), StdErrorS> {
     use minisign::SecretKeyBox;
-    use process_crates::{build_sign_crate, dir_check_is_empty};
+    use process_crates::{build_crate, dir_check_is_empty, sign_file};
     use tar::Header;
 
     println!("Running warehousify");
@@ -246,7 +246,7 @@ fn main() -> Result<(), StdErrorS> {
     }
     for crate_path in all_crate_paths.iter() {
         trace!("Processing crate {crate_path:?} for building and signing");
-        let (binary_name, signature, binary_bytes) = build_sign_crate(&config, crate_path)?;
+        let (binary_name, binary_bytes) = build_crate(&config, crate_path)?;
         let mut tar_buf = Vec::with_capacity(binary_bytes.capacity());
         match tar::Builder::new(&mut tar_buf).append_data(
             &mut Header::new_gnu(),
@@ -259,21 +259,27 @@ fn main() -> Result<(), StdErrorS> {
                 panic!("Error when tarballing file");
             }
         };
-        match tar::Builder::new(&mut tar_buf).append_data(
-            &mut Header::new_gnu(),
-            format!("{binary_name}.sig"),
-            signature.as_slice(),
-        ) {
-            Ok(_) => debug!("{binary_name}.sig added to tarball!"),
-            Err(e) => {
-                error!("Error occurred when building .tar file for {binary_name}: {e}");
-                panic!("Error when tarballing file");
-            }
-        };
-        match std::fs::write(path_binaries().join(format!("{binary_name}.tar")), tar_buf) {
+        match std::fs::write(path_binaries().join(format!("{binary_name}.tar")), &tar_buf) {
             Ok(_) => debug!("Wrote {binary_name}.tar to disk!"),
             Err(e) => {
                 error!("Could not write tar file for {binary_name} to disk: {e}");
+                panic!("I/O error");
+            }
+        };
+        let signature = match sign_file(&config, &tar_buf) {
+            Ok(sig) => sig,
+            Err(e) => {
+                error!("Error when trying to sign the tar archive for {binary_name}: {e}");
+                panic!("Signature error");
+            }
+        };
+        match std::fs::write(
+            path_binaries().join(format!("{binary_name}.tar.sig")),
+            &signature,
+        ) {
+            Ok(_) => debug!("Wrote {binary_name}.tar.sig to disk!"),
+            Err(e) => {
+                error!("Could not write signature file for {binary_name} archive to disk: {e}");
                 panic!("I/O error");
             }
         };

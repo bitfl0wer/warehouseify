@@ -10,7 +10,6 @@ use minisign::PublicKey;
 use crate::process_crates::panic_on_dangerous_path;
 use crate::{ConfigFile, SECRET, StdErrorS};
 
-
 // TODO
 // BUG
 // The output directory specified by the workspace path in the config MUST be empty before
@@ -57,7 +56,7 @@ mod build_command {
 
 /// Sign all binaries created in the output dir specified in the [ConfigFile]. Will error if any
 /// errors occur during signing.
-fn sign_file(config: &ConfigFile, file: &[u8]) -> Result<Vec<u8>, StdErrorS> {
+pub(crate) fn sign_file(config: &ConfigFile, file: &[u8]) -> Result<Vec<u8>, StdErrorS> {
     crate::check_minisign();
     Ok(minisign::sign(
         Some(
@@ -86,8 +85,7 @@ fn sign_file(config: &ConfigFile, file: &[u8]) -> Result<Vec<u8>, StdErrorS> {
 ///
 /// - `(String, ` is the name of the binary, including the file suffix. The name is formatted as
 ///   `[crate_name]-[crate-version]-[ISO 8601 build-timestamp]<.[suffix]>`.
-/// - ` Vec<u8>, ` (the first vector) contains the signature for the binary as bytes.
-/// - ` Vec<u8>)` (the second vector) contains the entire binary, as bytes.
+/// - ` Vec<u8>)` contains the entire binary, as bytes.
 ///
 /// Will error, if
 ///
@@ -95,10 +93,10 @@ fn sign_file(config: &ConfigFile, file: &[u8]) -> Result<Vec<u8>, StdErrorS> {
 /// - The produced signature somehow doesn't match the computed signature
 /// - The crate fails to build
 /// - There is an I/O error
-pub(crate) fn build_sign_crate(
+pub(crate) fn build_crate(
     config: &ConfigFile,
     crate_path: &Path,
-) -> Result<(String, Vec<u8>, Vec<u8>), StdErrorS> {
+) -> Result<(String, Vec<u8>), StdErrorS> {
     let manifest_path = crate_path.join("Cargo.toml");
     trace!("Locating manifest at {manifest_path:?}");
     let manifest = Manifest::from_path(manifest_path)?;
@@ -154,13 +152,7 @@ pub(crate) fn build_sign_crate(
         }
     };
     let timestamp = iso8601_timestamp::Timestamp::from(SystemTime::now()).to_string();
-    let signature = match sign_file(config, &file_buf) {
-        Ok(sig) => sig,
-        Err(e) => {
-            error!("Error when trying to sign the binary for {name}: {e}");
-            panic!("Signature error");
-        }
-    };
+
     if config.options.autodelete_sources {
         match std::fs::remove_dir_all(panic_on_dangerous_path(crate_path)) {
             Ok(_) => (),
@@ -172,7 +164,6 @@ pub(crate) fn build_sign_crate(
     info!("Done!");
     Ok((
         format!("{name}-{}-{timestamp}", manifest.package().version.get()?),
-        signature,
         file_buf,
     ))
 }

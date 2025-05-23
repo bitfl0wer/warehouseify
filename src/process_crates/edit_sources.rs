@@ -111,15 +111,15 @@ pub(crate) fn add_build_meta_info(
         }
     };
 
-    debug!(
-        r#"Inserting "pkg-url" = "{}" into [package.metadata.binstall]"#,
-        &config.options.pkg_url
-    );
-    // insert the pkg_url from the config
-    binstall_table.insert(
-        "pkg_url".to_string(),
-        toml::Value::String(config.options.pkg_url.to_owned()),
-    );
+    // debug!(
+    //     r#"Inserting "pkg-url" = "{}" into [package.metadata.binstall]"#,
+    //     &config.options.pkg_url
+    // );
+    // // insert the pkg_url from the config
+    // binstall_table.insert(
+    //     "pkg_url".to_string(),
+    //     toml::Value::String(config.options.pkg_url.to_owned()),
+    // );
     debug!(r#"Inserting "pkg-fmt" = "tar" into [package.metadata.binstall]"#);
     // insert the pkg_fmt (tar)
     binstall_table.insert("pkg_fmt".to_string(), toml::Value::String("tar".to_owned()));
