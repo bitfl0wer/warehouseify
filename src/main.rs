@@ -129,14 +129,14 @@ fn main() -> Result<(), StdErrorS> {
                 SecretKeyBox::from_string(secret)?
                     .into_secret_key(Some(cli_arguments.signing_key_password.clone()))?,
             )
-            .unwrap()
+            .expect("Failed setting secret. Has it already been set?")
     } else if let Some(secret) = &config.options.signing_key {
         SECRET
             .set(
                 SecretKeyBox::from_string(secret)?
                     .into_secret_key(Some(cli_arguments.signing_key_password.clone()))?,
             )
-            .unwrap()
+            .expect("Failed setting secret. Has it already been set?")
     }
 
     PATH_SOURCES.set(config.options.workspace_path.join("build/")).expect("Fatal: PATH_SOURCES has been set before warehousify initialized it. Something is wrong");
@@ -253,7 +253,18 @@ fn main() -> Result<(), StdErrorS> {
             &binary_name,
             binary_bytes.as_slice(),
         ) {
-            Ok(_) => debug!(".tar built for {binary_name}"),
+            Ok(_) => debug!("{binary_name} executable added to tarball!"),
+            Err(e) => {
+                error!("Error occurred when building .tar file for {binary_name}: {e}");
+                panic!("Error when tarballing file");
+            }
+        };
+        match tar::Builder::new(&mut tar_buf).append_data(
+            &mut Header::new_gnu(),
+            format!("{binary_name}.sig"),
+            signature.as_slice(),
+        ) {
+            Ok(_) => debug!("{binary_name}.sig added to tarball!"),
             Err(e) => {
                 error!("Error occurred when building .tar file for {binary_name}: {e}");
                 panic!("Error when tarballing file");
@@ -263,16 +274,6 @@ fn main() -> Result<(), StdErrorS> {
             Ok(_) => debug!("Wrote {binary_name}.tar to disk!"),
             Err(e) => {
                 error!("Could not write tar file for {binary_name} to disk: {e}");
-                panic!("I/O error");
-            }
-        };
-        match std::fs::write(
-            path_binaries().join(format!("{binary_name}.tar.sig")),
-            signature,
-        ) {
-            Ok(_) => debug!("Wrote {binary_name}.tar.sig to disk!"),
-            Err(e) => {
-                error!("Could not write signature file for {binary_name} to disk: {e}");
                 panic!("I/O error");
             }
         };

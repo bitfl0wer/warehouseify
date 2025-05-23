@@ -103,7 +103,7 @@ pub(crate) fn download_sources(
     match downloaded_sources.len() {
         0 => info!("Took a nap (nothing downloaded)"),
         num => {
-            info!("Successfully downloaded all {num} external sources");
+            info!("Successfully downloaded all {num} external sources!");
         }
     }
 
@@ -134,9 +134,7 @@ fn download_crates_io_sources(
         // Extract version from dependency
         let version = match dependency {
             Dependency::Simple(version) => {
-                debug!(
-                    "Using simple version '{version}' for dependency '{name}'"
-                );
+                debug!("Using simple version '{version}' for dependency '{name}'");
                 version.clone()
             }
             Dependency::Detailed(detail) => match &detail.version {
@@ -146,16 +144,13 @@ fn download_crates_io_sources(
                 }
                 None => {
                     error!("No version specified for crates.io dependency '{name}'");
-                    return Err(format!(
-                        "No version specified for crates.io dependency '{name}'"
-                    )
-                    .into());
+                    return Err(
+                        format!("No version specified for crates.io dependency '{name}'").into(),
+                    );
                 }
             },
             Dependency::Inherited(_) => {
-                error!(
-                    "Cannot deduce crate version for crate {name} from inherented dependency!"
-                );
+                error!("Cannot deduce crate version for crate {name} from inherented dependency!");
                 return Err(
                     String::from("Unable to parse crate version: Malformed configuration").into(),
                 );
@@ -171,9 +166,7 @@ fn download_crates_io_sources(
         match minreq::get(&url).send() {
             Ok(response) => {
                 if response.status_code == 200 {
-                    debug!(
-                        "Successfully downloaded '{name}' v{version} from static.crates.io"
-                    );
+                    debug!("Successfully downloaded '{name}' v{version} from static.crates.io");
                     downloaded.insert(name.clone(), unpack_gzip_archive(response.into_bytes())?);
                     continue;
                 } else {
@@ -184,24 +177,18 @@ fn download_crates_io_sources(
                 }
             }
             Err(e) => {
-                warn!(
-                    "Static URL request failed for '{name}': {e}, falling back to API"
-                );
+                warn!("Static URL request failed for '{name}': {e}, falling back to API");
             }
         }
 
         // Fall back to API endpoint if static URL fails
-        let api_url = format!(
-            "https://crates.io/api/v1/crates/{package_name}/{version}/download"
-        );
+        let api_url = format!("https://crates.io/api/v1/crates/{package_name}/{version}/download");
         trace!("Attempting download from API URL: {api_url}");
 
         match minreq::get(&api_url).send() {
             Ok(api_response) => {
                 if api_response.status_code == 200 {
-                    debug!(
-                        "Successfully downloaded '{name}' v{version} from crates.io API"
-                    );
+                    debug!("Successfully downloaded '{name}' v{version} from crates.io API");
                     downloaded.insert(
                         name.clone(),
                         unpack_gzip_archive(api_response.into_bytes())?,
@@ -255,16 +242,12 @@ fn download_git_sources(
                     }
                     None => {
                         error!("No git URL specified for dependency '{name}'");
-                        return Err(
-                            format!("No git URL specified for dependency '{name}'").into()
-                        );
+                        return Err(format!("No git URL specified for dependency '{name}'").into());
                     }
                 },
                 _ => {
                     error!("Invalid dependency format for git source '{name}'");
-                    return Err(
-                        format!("Invalid dependency format for git source '{name}'").into(),
-                    );
+                    return Err(format!("Invalid dependency format for git source '{name}'").into());
                 }
             };
 
@@ -281,26 +264,16 @@ fn download_git_sources(
                 // Construct download URL based on git reference type
                 let download_url = match git_info {
                     CrateGitInformation::Branch(branch) => {
-                        trace!(
-                            "Using branch '{branch}' for GitHub repo {owner}/{repo}"
-                        );
-                        format!(
-                            "https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
-                        )
+                        trace!("Using branch '{branch}' for GitHub repo {owner}/{repo}");
+                        format!("https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip")
                     }
                     CrateGitInformation::Commit(commit) => {
-                        trace!(
-                            "Using commit '{commit}' for GitHub repo {owner}/{repo}"
-                        );
-                        format!(
-                            "https://github.com/{owner}/{repo}/archive/{commit}.zip"
-                        )
+                        trace!("Using commit '{commit}' for GitHub repo {owner}/{repo}");
+                        format!("https://github.com/{owner}/{repo}/archive/{commit}.zip")
                     }
                     CrateGitInformation::Tag(tag) => {
                         trace!("Using tag '{tag}' for GitHub repo {owner}/{repo}");
-                        format!(
-                            "https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip"
-                        )
+                        format!("https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip")
                     }
                     CrateGitInformation::None => {
                         warn!(
@@ -333,9 +306,7 @@ fn download_git_sources(
 
                         // Fall back to stable branch
                         info!("Trying stable branch for GitHub repo {owner}/{repo}");
-                        format!(
-                            "https://github.com/{owner}/{repo}/archive/refs/heads/stable.zip"
-                        )
+                        format!("https://github.com/{owner}/{repo}/archive/refs/heads/stable.zip")
                     }
                 };
 
@@ -364,9 +335,7 @@ fn download_git_sources(
                     }
                     Err(e) => {
                         error!("Request failed for git source '{name}': {e}");
-                        return Err(
-                            format!("Request failed for git source '{name}': {e}").into()
-                        );
+                        return Err(format!("Request failed for git source '{name}': {e}").into());
                     }
                 }
             } else if git_url.contains("gitlab.com") {
@@ -381,17 +350,13 @@ fn download_git_sources(
                 // Construct download URL based on git reference type
                 let download_url = match git_info {
                     CrateGitInformation::Branch(branch) => {
-                        info!(
-                            "Using branch '{branch}' for GitLab repo {owner}/{repo}"
-                        );
+                        info!("Using branch '{branch}' for GitLab repo {owner}/{repo}");
                         format!(
                             "https://gitlab.com/api/v4/projects/{owner}%2F{repo}/repository/archive.zip?sha={branch}"
                         )
                     }
                     CrateGitInformation::Commit(commit) => {
-                        info!(
-                            "Using commit '{commit}' for GitLab repo {owner}/{repo}"
-                        );
+                        info!("Using commit '{commit}' for GitLab repo {owner}/{repo}");
                         format!(
                             "https://gitlab.com/api/v4/projects/{owner}%2F{repo}/repository/archive.zip?sha={commit}"
                         )
@@ -437,20 +402,15 @@ fn download_git_sources(
                     }
                     Err(e) => {
                         error!("Request failed for git source '{name}': {e}");
-                        return Err(
-                            format!("Request failed for git source '{name}': {e}").into()
-                        );
+                        return Err(format!("Request failed for git source '{name}': {e}").into());
                     }
                 }
             } else {
                 warn!("Git host not supported: {git_url}");
-                error!(
-                    "Unsupported git host for dependency '{name}': {git_url}"
+                error!("Unsupported git host for dependency '{name}': {git_url}");
+                return Err(
+                    format!("Unsupported git host for dependency '{name}': {git_url}").into(),
                 );
-                return Err(format!(
-                    "Unsupported git host for dependency '{name}': {git_url}"
-                )
-                .into());
             }
         }
     }
